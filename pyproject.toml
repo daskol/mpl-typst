@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "typst-mpl-backend"
+description = "Typst backend for matplotlib (Python visualization library)."
+license = {text = "MIT"}
+authors = [
+    {name = "Daniel Bershatsky", email = "daniel.bershatsky@gmail.com"},
+]
+readme = {file = "README.md", content-type = "text/markdown"}
+version = "0.0.0"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Other Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Text Processing",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dependencies = ["matplotlib"]
+requires-python = ">=3.11,<4"
+
+[project.optional-dependencies]
+dev = ["flake8", "isort", "pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/daskol/typst-mpl-backend"
+Repository = "https://github.com/daskol/typst-mpl-backend.git"
+
+[tool.isort]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = ["mpl_typst"]
+markers = [ ]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.setuptools]
+zip-safe = true
+
+[tool.setuptools.packages.find]
+include = ["mpl_typst*"]
