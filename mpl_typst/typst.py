@@ -79,6 +79,7 @@ class Scalar(Node):
         else:
             writer.write(f'{self.value}')
 
+
 @dataclass
 class Content(Node):
 
@@ -88,6 +89,7 @@ class Content(Node):
         writer.write('[')
         writer.write(self.content)
         writer.write(']')
+
 
 @dataclass
 class Array(Node):

@@ -1,4 +1,4 @@
-from mpl_typst.typst import Array, Block, Call, Dictionary, Scalar, Writer
+from mpl_typst.typst import Block, Call, Scalar, Writer
 
 
 def test_sanity():
