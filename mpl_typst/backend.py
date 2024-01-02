@@ -1,9 +1,10 @@
 import pathlib
 import subprocess
+from datetime import date, datetime
 from io import StringIO
 from shutil import copyfileobj
 from tempfile import TemporaryDirectory
-from typing import IO, Literal, Type
+from typing import Literal, Optional, Self, TextIO, Type
 
 from matplotlib.backend_bases import (FigureCanvasBase, FigureManagerBase,
                                       GraphicsContextBase, RendererBase)
@@ -16,34 +17,82 @@ from matplotlib.transforms import (Affine2DBase, Bbox, BboxBase, Transform,
 from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 
+from mpl_typst.typst import Array, Block, Call, Content, Dictionary, Scalar
+from mpl_typst.typst import Writer as TypstWriter
+
 __all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
            'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer')
+
+PROLOGUE = pathlib.Path(__file__).parent / 'prologue.typ'
 
 
 class TypstRenderer(RendererBase):
     """Typst renderer handles drawing/rendering operations."""
 
-    def __init__(self, figure: Figure, fout: IO, width: float, height: float,
-                 dpi: float):
+    def __init__(self, figure: Figure, fout: TextIO,
+                 metadata: dict[str, str] = {}):
         super().__init__()
         self.figure = figure
         self.fout = fout
-        self.width = width
-        self.height = height
-        self.dpi = dpi
+        self.metadata = metadata
+
+        self.width = self.figure.get_figwidth()
+        self.height = self.figure.get_figheight()
+        self.dpi = self.figure.dpi
+        self.timestamp = datetime.now().replace(microsecond=0)
+
+        self.writer: Optional[TypstWriter] = None
+        self.main: Optional[Block] = None
+
+    def __enter__(self) -> Self:
+        # First of all, add some helpers for rendering at the beginning.
+        with open(PROLOGUE) as fin:
+            template = fin.read()
+            text = template.replace('{{ date }}', self.timestamp.isoformat())
+        self.fout.write(text)
+        self.fout.write('\n')
+
+        # Now configure document geometry and set metadata.
+        title = 'none'
+        if value := self.metadata.get('title'):
+            escaped = value.replace('"', '\"')
+            title = f'"{escaped}"'
+        date_ = 'auto'
+        if ts := self.metadata.get('date', self.timestamp.date()):
+            if isinstance(ts, datetime):
+                ts: date = ts.date()
+            elif isinstance(ts, date):
+                ts: date = ts
+            elif isinstance(ts, str):
+                ts: date = datetime.fromisoformat(ts).date()
+            else:
+                raise ValueError(f'Wrong format of date in metadata: {ts}.')
+            date_ = (f'datetime(year: {ts.year}, month: {ts.month}, '
+                     f'day: {ts.day})')
+        self.fout.write(f'#set document(title: {title}, date: {date_})\n')
+        self.fout.write(f'#set page(width: {self.width}in, '
+                        f'height: {self.height}in, margin: 0pt)\n')
+        self.fout.write('\n')
+
+        # Create a main block for drawing.
+        self.main = Block()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.fout.write('#')  # Escape command.
+        self.writer = TypstWriter(self.fout)
+        expr = Call('block', self.main, spacing=Scalar(0, 'pt'),
+                    above=Scalar(0, 'pt'), below=Scalar(0, 'pt'),
+                    width=Scalar(100, '%'), height=Scalar(100, '%'))
+        expr.to_string(self.writer)
 
     def draw_image(self, gc: GraphicsContextBase, x: float, y: float,
                    im: ArrayLike, transform: Affine2DBase | None = None):
-        pass
+        raise NotImplementedError
 
     def draw_path(self, gc: GraphicsContextBase, path: Path,
                   transform: Transform, rgbFace: ColorType | None = None):
-        buf = StringIO()
-
-        def add_point(point):
-            x, y = point
-            buf.write(f'({x}in, {y}in)')
-
+        # Transform y-coordinates since Oy axis is flipped.
         def normalize(coords) -> tuple[float, ...]:
             result = []
             for ix, coord in enumerate(coords):
@@ -54,30 +103,34 @@ class TypstRenderer(RendererBase):
                 result.append(coord)
             return tuple(result)
 
-        closed = False
-        gc.get_linewidth()
-
-        stroke = StringIO()
-        stroke.write('stroke(')
-        # print(gc.get_rgb())
-        components = ', '.join(f'{c * 100:f}%' for c in gc.get_rgb())
-        paint = f'rgb({components})'
-        stroke.write(f'paint: {paint}, ')
-        stroke.write(f'thickness: {gc.get_linewidth()}pt, ')
+        # Configure basic appearance of a line.
         if (capstyle := gc.get_capstyle()) == 'projecting':
             capstyle = 'square'
-        stroke.write(f'cap: "{capstyle}", ')
-        stroke.write(f'join: "{gc.get_joinstyle()}", ')
+        colour = Call('rgb', *[Scalar(c * 100, '%') for c in gc.get_rgb()])
+        stroke = Call(
+            'stroke',
+            paint=colour,
+            thickness=Scalar(gc.get_linewidth(), 'pt'),
+            cap=Scalar(capstyle),
+            join=Scalar(gc.get_joinstyle()),
+        )
+
+        # Configure appearance of dashed line.
         (offset, bounds) = gc.get_dashes()
         if bounds:
-            bounds = ', '.join(f'{x}pt' for x in bounds)
+            bounds = Array([Scalar(bound, 'pt') for bound in bounds])
             if offset == 0:
-                dash = f'(array: ({bounds}), phase: {offset}pt)'
+                stroke.kwargs.update({
+                    'dash': Dictionary({
+                        'array': bounds,
+                        'phase': Scalar(offset, 'pt'),
+                    })
+                })
             else:
-                dash = f'({bounds})'
-            stroke.write(f'dash: {dash}, ')
-        stroke.write(')')
-        stroke = stroke.getvalue()
+                stroke.kwargs.update({'dash': bounds})
+
+        # Construct a `path` routine invokation.
+        line = Call('path', stroke=stroke)
         for points, code in path.iter_segments(transform):
             points = normalize(points)
             match code:
@@ -85,44 +138,34 @@ class TypstRenderer(RendererBase):
                     pass
                 case Path.MOVETO | Path.LINETO:
                     x, y = points
-                    buf.write(f'  ')
-                    add_point(points)
-                    buf.write(',\n')
+                    line.args.append(Array([Scalar(x, 'in'), Scalar(y, 'in')]))
                 case Path.CURVE3:
                     cx, cy, px, py = points
-                    buf.write('  (')
-                    add_point((px, py))
-                    buf.write(', ')
-                    add_point((cx - px, cy - py))
-                    buf.write('),\n')
+                    p = Array([Scalar(px, 'in'), Scalar(py, 'in')])
+                    c = Array([Scalar(cx - px, 'in'), Scalar(cy - py, 'in')])
+                    line.args.append(Array([p, ]))
                 case Path.CURVE4:
                     inx, iny, outx, outy, px, py = points
-                    buf.write('  (')
-                    add_point((px, py))
-                    buf.write(', ')
-                    add_point((inx - inx, outy - outy))
-                    buf.write('),\n')
+                    p = Array([Scalar(px, 'in'), Scalar(py, 'in')])
+                    inp = Array([Scalar(inx - px, 'in'),
+                                 Scalar(iny - py, 'in')])
+                    out = Array([Scalar(outx - px, 'in'),
+                                 Scalar(outy - py, 'in')])
+                    line.args.append(Array([p, inp, out]))
                 case Path.CLOSEPOLY:
-                    closed = True
-                    point = points
-        self.fout.write(f'place(dx: 0in, dy: 0in,\n    path(')
-        self.fout.write(f'stroke: {stroke}, ')
-        if closed:
-            self.fout.write('closed: true,')
-        self.fout.write('\n')
-        self.fout.write(buf.getvalue())
-        self.fout.write('))\n')
+                    line.kwargs.update({'closed': True})
+
+        # Place a line path relative to parent block element without layouting.
+        place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
+        self.main.append(place)
 
     def draw_text(self, gc: GraphicsContextBase, x: float, y: float, s: str,
                   prop: FontProperties, angle: float,
                   ismath: bool | Literal['TeX'] = False, *,
                   mtext: Text | None = None):
-        print((x, y), s, mtext, ismath, mtext.get_rotation(),
-              mtext.get_rotation_mode())
         alignment = 'center + horizon'
         baseline = False
         fontsize = prop.get_size_in_points()
-        # if mtext and (mtext.get_verticalalignment() != 'center_baseline'):
         if mtext:
             pos = mtext.get_unitless_position()
             x, y = mtext.get_transform().transform(pos)
@@ -139,21 +182,22 @@ class TypstRenderer(RendererBase):
                 case 'baseline':
                     valign = 'bottom'
                     baseline = True
-            print(halign, '+', valign, baseline)
             alignment = f'{halign} + {valign}'
             fontsize = mtext.get_fontsize()
             angle = mtext.get_rotation()
         else:
             x = x / self.figure.dpi
             y = self.height + y / self.figure.dpi
-        # self.fout.write(f'  place(dx: {x}in, dy: {y}in,\n    text([{s}]))\n')
-        self.fout.write(f'  draw_text(dx: {x}in, dy: {y}in, ')
-        self.fout.write(f'size: {fontsize}pt, ')
-        self.fout.write(f'alignment: {alignment}, ')
-        if baseline:
-            self.fout.write(f'baseline: true, ')
-        self.fout.write(f'angle: {360 - angle}deg, ')
-        self.fout.write(f'text([{s}]))\n')
+
+        elem = Call('draw-text',
+                    Content(s),
+                    dx=Scalar(x, 'in'),
+                    dy=Scalar(y, 'in'),
+                    size=Scalar(fontsize, 'pt'),
+                    alignment=alignment,
+                    baseline=baseline,
+                    angle=Scalar(360 - angle, 'deg'))
+        self.main.append(elem)
 
     def flipy(self):
         """Axis Oy points to bottom."""
@@ -228,64 +272,11 @@ class TypstFigureCanvas(FigureCanvasBase):
         raise NotImplementedError
 
     def print_typ(self, filename, **kwargs):
-        width = self.figure.get_figwidth()
-        height = self.figure.get_figheight()
-        dpi = self.figure.dpi
         with open(filename, 'w') as fout:
-            fout.write('#set document(title: "testing")\n')
-            fout.write(
-                f'#set page(width: {width}in, height: {height}in, margin: 0pt)\n'
-            )
-            fout.write(PREABMBLE)
-            fout.write(
-                f'#block(spacing: 0pt, above: 0pt, below: 0pt, width: 100%, height: 100%, {{\n'
-            )
-            renderer = TypstRenderer(self.figure, fout, width, height, dpi)
-            self.figure.draw(renderer)
-            fout.write('})\n')
+            with TypstRenderer(self.figure, fout) as renderer:
+                self.figure.draw(renderer)
 
 
 # Now, just provide the standard names that `backend.__init__` is expecting.
 FigureCanvas = TypstFigureCanvas
 FigureManager = TypstFigureManager
-
-PREABMBLE = """
-#let draw_text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, body) = style(styles => {
-  let top-edge = "cap-height"
-  let bot-edge = "bounds"
-  let valign = alignment.y;
-  if baseline and valign == bottom {
-    bot-edge = "baseline"
-  }
-
-  if baseline and valign == horizon {
-    bot-edge = "baseline"
-  }
-
-  let content = text(size: size, top-edge: top-edge, bottom-edge: bot-edge, body)
-  let shape = measure(content, styles)
-
-  let px = dx
-  if alignment.x == left {
-    // Do nothing.
-  } else if alignment.x == center {
-    px -= shape.width / 2
-  } else if alignment.x == right {
-    px -= shape.width
-  }
-
-  let py = dy
-  if valign == top {
-    // Do nothing.
-  } else if valign == horizon {
-    py -= shape.height / 2
-  } else if valign == bottom {
-    py -= shape.height
-  }
-
-  if angle != 0deg {
-    content = rotate(angle, origin: alignment, content)
-  }
-  place(dx: px, dy: py, content)
-})
-"""

@@ -10,5 +10,7 @@ with rc_context():
     ax.legend()
     ax.set_xlabel(r'$x$')
     ax.set_ylabel(r'$f(x)$')
-    # fig.savefig('line-plot-simple.typ')
+    fig.savefig('line-plot-simple.typ')
+    fig.savefig('line-plot-simple.pdf')
     fig.savefig('line-plot-simple.png')
+    fig.savefig('line-plot-simple.svg')

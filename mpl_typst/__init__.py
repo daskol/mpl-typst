@@ -28,7 +28,9 @@ Also, it is possible to use rendering context as usual to override backend.
 """
 
 from contextlib import contextmanager
-from typing import Any
+from os import PathLike
+from pathlib import Path
+from typing import Any, Generator
 
 import matplotlib as mpl
 
@@ -44,7 +46,10 @@ BACKEND = 'module://mpl_typst'
 
 
 @contextmanager
-def rc_context(rc: dict[str, Any] | None = None, fname=None):
+def rc_context(
+    rc: dict[str, Any] | None = None,
+    fname: PathLike | Path | str | None = None,
+) -> Generator[None, None, None]:
     """A shortcut for using Typst as default backend in a context.
 
     It forward all arguments to original :py:`matplotlib.rc_context` context
@@ -57,7 +62,7 @@ def rc_context(rc: dict[str, Any] | None = None, fname=None):
        with mpl_typst.rc_context():
            ...
     """
-    original_backend = mpl.rcParams.get('backend')
+    original_backend = mpl.rcParams['backend']
     with mpl.rc_context(rc, fname):
         mpl.use(BACKEND)
         yield
