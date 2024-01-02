@@ -35,11 +35,12 @@ from typing import Any, Generator
 import matplotlib as mpl
 
 from mpl_typst.backend import (FigureCanvas, FigureManager, TypstFigureCanvas,
-                               TypstFigureManager, TypstRenderer)
+                               TypstFigureManager, TypstRenderer,
+                               TypstRenderingError)
 
 __all__ = ('BACKEND', 'FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
            'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
-           'rc_context', 'use')
+           'TypstRenderingError', 'rc_context', 'use')
 
 # Backend specification for use with `matplotlib.use`
 BACKEND = 'module://mpl_typst'

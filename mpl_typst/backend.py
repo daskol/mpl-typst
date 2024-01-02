@@ -1,19 +1,20 @@
 import pathlib
+import re
 import subprocess
 from datetime import date, datetime
-from io import StringIO
+from io import BytesIO, StringIO
 from shutil import copyfileobj
 from tempfile import TemporaryDirectory
-from typing import Literal, Optional, Self, TextIO, Type
+from typing import Any, Literal, Optional, Self, TextIO, Type
 
+from matplotlib import get_cachedir
 from matplotlib.backend_bases import (FigureCanvasBase, FigureManagerBase,
                                       GraphicsContextBase, RendererBase)
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
 from matplotlib.text import Text
-from matplotlib.transforms import (Affine2DBase, Bbox, BboxBase, Transform,
-                                   TransformedPath)
+from matplotlib.transforms import Affine2DBase, Transform
 from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 
@@ -21,9 +22,36 @@ from mpl_typst.typst import Array, Block, Call, Content, Dictionary, Scalar
 from mpl_typst.typst import Writer as TypstWriter
 
 __all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
-           'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer')
+           'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
+           'TypstRenderingError')
 
 PROLOGUE = pathlib.Path(__file__).parent / 'prologue.typ'
+
+RE_ERROR = re.compile(
+    r'^(?P<filename>.*):(?P<line>\d+):(?P<column>\d+): error: (?P<reason>.*)$')
+
+TPL_ERROR = '  {filename}:{line}:{column}: {reason}'
+
+
+class TypstRenderingError(RuntimeError):
+    """Represent an error occured in rendering target with Typst binary."""
+
+    def __init__(self, stdout: str, stderr: str, errors: list[dict[str, Any]]):
+        header = (f'Typst renderer failed with {len(errors)} errors. '
+                  'They are shown below')
+        lines = [header]
+        for error in errors:
+            lines.append(TPL_ERROR.format(**error))
+        message = '\n'.join(lines)
+
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
+        self.errors = errors
+
+    def to_dict(self):
+        return {'stdout': self.stdout, 'stderr': self.stderr,
+                'errors': self.errors}
 
 
 class TypstRenderer(RendererBase):
@@ -53,26 +81,35 @@ class TypstRenderer(RendererBase):
         self.fout.write('\n')
 
         # Now configure document geometry and set metadata.
-        title = 'none'
-        if value := self.metadata.get('title'):
-            escaped = value.replace('"', '\"')
-            title = f'"{escaped}"'
-        date_ = 'auto'
-        if ts := self.metadata.get('date', self.timestamp.date()):
-            if isinstance(ts, datetime):
-                ts: date = ts.date()
-            elif isinstance(ts, date):
-                ts: date = ts
-            elif isinstance(ts, str):
-                ts: date = datetime.fromisoformat(ts).date()
-            else:
-                raise ValueError(f'Wrong format of date in metadata: {ts}.')
-            date_ = (f'datetime(year: {ts.year}, month: {ts.month}, '
-                     f'day: {ts.day})')
-        self.fout.write(f'#set document(title: {title}, date: {date_})\n')
-        self.fout.write(f'#set page(width: {self.width}in, '
-                        f'height: {self.height}in, margin: 0pt)\n')
-        self.fout.write('\n')
+        if self.metadata:
+            title = 'none'
+            if value := self.metadata.get('title'):
+                escaped = value.replace('"', '\"')
+                title = f'"{escaped}"'
+
+            author = '()'
+            if value := self.metadata.get('author'):
+                escaped = value.replace('"', '\"')
+                author = f'"{value}"'
+
+            date_ = 'auto'
+            if ts := self.metadata.get('date', self.timestamp.date()):
+                if isinstance(ts, datetime):
+                    ts: date = ts.date()
+                elif isinstance(ts, date):
+                    ts: date = ts
+                elif isinstance(ts, str):
+                    ts: date = datetime.fromisoformat(ts).date()
+                else:
+                    raise ValueError(f'Wrong date format in metadata: {ts}.')
+                date_ = (f'datetime(year: {ts.year}, month: {ts.month}, '
+                         f'day: {ts.day})')
+
+            self.fout.write(f'#set document(title: {title}, author: {author}, '
+                            f'date: {date_})\n')
+            self.fout.write(f'#set page(width: {self.width}in, '
+                            f'height: {self.height}in, margin: 0pt)\n')
+            self.fout.write('\n')
 
         # Create a main block for drawing.
         self.main = Block()
@@ -83,7 +120,8 @@ class TypstRenderer(RendererBase):
         self.writer = TypstWriter(self.fout)
         expr = Call('block', self.main, spacing=Scalar(0, 'pt'),
                     above=Scalar(0, 'pt'), below=Scalar(0, 'pt'),
-                    width=Scalar(100, '%'), height=Scalar(100, '%'))
+                    width=Scalar(self.width, 'in'),
+                    height=Scalar(self.height, 'in'))
         expr.to_string(self.writer)
 
     def draw_image(self, gc: GraphicsContextBase, x: float, y: float,
@@ -119,7 +157,7 @@ class TypstRenderer(RendererBase):
         (offset, bounds) = gc.get_dashes()
         if bounds:
             bounds = Array([Scalar(bound, 'pt') for bound in bounds])
-            if offset == 0:
+            if offset:
                 stroke.kwargs.update({
                     'dash': Dictionary({
                         'array': bounds,
@@ -143,7 +181,7 @@ class TypstRenderer(RendererBase):
                     cx, cy, px, py = points
                     p = Array([Scalar(px, 'in'), Scalar(py, 'in')])
                     c = Array([Scalar(cx - px, 'in'), Scalar(cy - py, 'in')])
-                    line.args.append(Array([p, ]))
+                    line.args.append(Array([p, c]))
                 case Path.CURVE4:
                     inx, iny, outx, outy, px, py = points
                     p = Array([Scalar(px, 'in'), Scalar(py, 'in')])
@@ -209,7 +247,7 @@ class TypstRenderer(RendererBase):
     def get_text_width_height_descent(
             self, s: str, prop: FontProperties,
             ismath: bool | Literal['TeX'] = False,
-        ) -> tuple[float, float, float]:
+    ) -> tuple[float, float, float]:
         return super().get_text_width_height_descent(s, prop, ismath)
 
     def new_gc(self) -> Type[GraphicsContextBase]:
@@ -241,7 +279,7 @@ class TypstFigureCanvas(FigureCanvasBase):
 
     filetypes = {**FigureCanvasBase.filetypes, 'typ': 'Typst Markup'}
 
-    fixed_dpi: float = 144
+    fixed_dpi: Optional[float] = None
 
     manager_class = TypstFigureManager
 
@@ -254,27 +292,69 @@ class TypstFigureCanvas(FigureCanvasBase):
         return 'typ'
 
     def print_pdf(self, filename, **kwargs):
-        raise NotImplementedError
+        return self._print_as('pdf', filename, **kwargs)
 
     def print_png(self, filename, **kwargs):
-        with TemporaryDirectory() as tmpdir:
-            inp_path = pathlib.Path(tmpdir) / 'main.typ'
-            out_path = inp_path.with_suffix('.png')
-            self.print_typ(inp_path, **kwargs)
-            cmd = ['typst', 'compile', f'--root={tmpdir}', '--format=png',
-                   str(inp_path), str(out_path)]
-            print(f'execute command: "{" ".join(cmd)}"')
-            proc = subprocess.run(cmd, capture_output=True)
-            with open(out_path, 'rb') as fin, open(filename, 'wb') as fout:
-                copyfileobj(fin, fout)
+        return self._print_as('png', filename, **kwargs)
 
     def print_svg(self, filename, **kwargs):
-        raise NotImplementedError
+        return self._print_as('svg', filename, **kwargs)
 
-    def print_typ(self, filename, **kwargs):
-        with open(filename, 'w') as fout:
-            with TypstRenderer(self.figure, fout) as renderer:
+    def print_typ(self, filename, *, metadata=None, **kwargs):
+        # TODO(@daskol): Matplotlib shows quite unexpectedbehaviour. It renders
+        # the same figure multiple types with randering to temporary buffer
+        # (BytesIO) rather than directly to file. So, it would be great to
+        # rewrite this function and neighnoring one to make it file-agnostic.
+        if isinstance(filename, BytesIO):
+            buf = StringIO()
+            with TypstRenderer(self.figure, buf, metadata or {}) as renderer:
                 self.figure.draw(renderer)
+            content = buf.getvalue().encode('utf-8')
+            buf.write(content)
+        else:
+            with open(filename, 'w') as fout:
+                metadata = metadata or {}
+                with TypstRenderer(self.figure, fout, metadata) as renderer:
+                    self.figure.draw(renderer)
+
+    def _print_as(self, fmt, filename, *, metadata=None, **kwargs):
+        # Set up default metadata. We use metadata as a condition for setting
+        # canvas geometry in rendering.
+        metadata = metadata or {}
+        if 'author' not in metadata:
+            metadata['author'] = 'mpl_typst (Typst Matplotlib backend)'
+
+        with TemporaryDirectory(prefix='typst-', dir=get_cachedir()) as tmpdir:
+            # Render figure in pure textual typst markup.
+            inp_path = pathlib.Path(tmpdir) / 'main.typ'
+            self.print_typ(inp_path, metadata=metadata, **kwargs)
+
+            # Render typst markup running typst binary.
+            out_path = inp_path.with_suffix(f'.{fmt}')
+            dpi = kwargs.get('dpi', self.figure.dpi)
+            cmd = ['typst', 'compile', f'--root={tmpdir}', f'--format={fmt}',
+                   '--diagnostic-format=short', f'--ppi={dpi}',
+                   str(inp_path), str(out_path)]
+            proc = subprocess.run(cmd, capture_output=True, cwd=tmpdir)
+            if proc.returncode:
+                kwargs = {'stdout': proc.stdout.decode('utf-8'),
+                          'stderr': proc.stderr.decode('utf-8'),
+                          'errors': []}
+                for m in RE_ERROR.finditer(kwargs['stderr']):
+                    error = m.groupdict()
+                    error['line'] = int(error['line'])
+                    error['column'] = int(error['column'])
+                    kwargs['errors'].append(error)
+                raise TypstRenderingError(**kwargs)
+
+            # Move rendered figure from temporary directory to target location.
+            if isinstance(filename, BytesIO):
+                with open(out_path, 'rb') as fin:
+                    copyfileobj(fin, filename)
+            else:
+                dst_path = pathlib.Path(filename)
+                dst_path.parent.mkdir(exist_ok=True, parents=True)
+                out_path.rename(dst_path)
 
 
 # Now, just provide the standard names that `backend.__init__` is expecting.
