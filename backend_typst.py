@@ -1,161 +1,193 @@
-"""
-A fully functional, do-nothing backend intended as a template for backend
-writers.  It is fully functional in that you can select it as a backend e.g.
-with ::
+import pathlib
+import subprocess
+from io import StringIO
+from shutil import copyfileobj
+from tempfile import TemporaryDirectory
+from typing import IO, Literal, Type
 
-    import matplotlib
-    matplotlib.use("template")
-
-and your program will (should!) run without error, though no output is
-produced.  This provides a starting point for backend writers; you can
-selectively implement drawing methods (`~.RendererTemplate.draw_path`,
-`~.RendererTemplate.draw_image`, etc.) and slowly see your figure come to life
-instead having to have a full-blown implementation before getting any results.
-
-Copy this file to a directory outside the Matplotlib source tree, somewhere
-where Python can import it (by adding the directory to your ``sys.path`` or by
-packaging it as a normal Python package); if the backend is importable as
-``import my.backend`` you can then select it using ::
-
-    import matplotlib
-    matplotlib.use("module://my.backend")
-
-If your backend implements support for saving figures (i.e. has a `print_xyz`
-method), you can register it as the default handler for a given file type::
-
-    from matplotlib.backend_bases import register_backend
-    register_backend('xyz', 'my_backend', 'XYZ File Format')
-    ...
-    plt.savefig("figure.xyz")
-"""
-
-from matplotlib import _api
-from matplotlib._pylab_helpers import Gcf
 from matplotlib.backend_bases import (FigureCanvasBase, FigureManagerBase,
                                       GraphicsContextBase, RendererBase)
 from matplotlib.figure import Figure
+from matplotlib.font_manager import FontProperties
+from matplotlib.path import Path
+from matplotlib.text import Text
+from matplotlib.transforms import (Affine2DBase, Bbox, BboxBase, Transform,
+                                   TransformedPath)
+from matplotlib.typing import ColorType
+from numpy.typing import ArrayLike
+
+__all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
+           'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer')
 
 
-class RendererTemplate(RendererBase):
-    """
-    The renderer handles drawing/rendering operations.
+class TypstRenderer(RendererBase):
+    """Typst renderer handles drawing/rendering operations."""
 
-    This is a minimal do-nothing class that can be used to get started when
-    writing a new backend.  Refer to `.backend_bases.RendererBase` for
-    documentation of the methods.
-    """
-
-    def __init__(self, dpi):
+    def __init__(self, figure: Figure, fout: IO, width: float, height: float,
+                 dpi: float):
         super().__init__()
+        self.figure = figure
+        self.fout = fout
+        self.width = width
+        self.height = height
         self.dpi = dpi
 
-    def draw_path(self, gc, path, transform, rgbFace=None):
+    def draw_image(self, gc: GraphicsContextBase, x: float, y: float,
+                   im: ArrayLike, transform: Affine2DBase | None = None):
         pass
 
-    # draw_markers is optional, and we get more correct relative
-    # timings by leaving it out.  backend implementers concerned with
-    # performance will probably want to implement it
-#     def draw_markers(self, gc, marker_path, marker_trans, path, trans,
-#                      rgbFace=None):
-#         pass
+    def draw_path(self, gc: GraphicsContextBase, path: Path,
+                  transform: Transform, rgbFace: ColorType | None = None):
+        buf = StringIO()
 
-    # draw_path_collection is optional, and we get more correct
-    # relative timings by leaving it out. backend implementers concerned with
-    # performance will probably want to implement it
-#     def draw_path_collection(self, gc, master_transform, paths,
-#                              all_transforms, offsets, offset_trans,
-#                              facecolors, edgecolors, linewidths, linestyles,
-#                              antialiaseds):
-#         pass
+        def add_point(point):
+            x, y = point
+            buf.write(f'({x}in, {y}in)')
 
-    # draw_quad_mesh is optional, and we get more correct
-    # relative timings by leaving it out.  backend implementers concerned with
-    # performance will probably want to implement it
-#     def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight,
-#                        coordinates, offsets, offsetTrans, facecolors,
-#                        antialiased, edgecolors):
-#         pass
+        def normalize(coords) -> tuple[float, ...]:
+            result = []
+            for ix, coord in enumerate(coords):
+                if (ix % 2) == 1:
+                    coord = self.height - coord / self.dpi
+                else:
+                    coord = coord / self.dpi
+                result.append(coord)
+            return tuple(result)
 
-    def draw_image(self, gc, x, y, im):
-        pass
+        closed = False
+        gc.get_linewidth()
 
-    def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
-        pass
+        stroke = StringIO()
+        stroke.write('stroke(')
+        # print(gc.get_rgb())
+        components = ', '.join(f'{c * 100:f}%' for c in gc.get_rgb())
+        paint = f'rgb({components})'
+        stroke.write(f'paint: {paint}, ')
+        stroke.write(f'thickness: {gc.get_linewidth()}pt, ')
+        if (capstyle := gc.get_capstyle()) == 'projecting':
+            capstyle = 'square'
+        stroke.write(f'cap: "{capstyle}", ')
+        stroke.write(f'join: "{gc.get_joinstyle()}", ')
+        (offset, bounds) = gc.get_dashes()
+        if bounds:
+            bounds = ', '.join(f'{x}pt' for x in bounds)
+            if offset == 0:
+                dash = f'(array: ({bounds}), phase: {offset}pt)'
+            else:
+                dash = f'({bounds})'
+            stroke.write(f'dash: {dash}, ')
+        stroke.write(')')
+        stroke = stroke.getvalue()
+        for points, code in path.iter_segments(transform):
+            points = normalize(points)
+            match code:
+                case Path.STOP:
+                    pass
+                case Path.MOVETO | Path.LINETO:
+                    x, y = points
+                    buf.write(f'  ')
+                    add_point(points)
+                    buf.write(',\n')
+                case Path.CURVE3:
+                    cx, cy, px, py = points
+                    buf.write('  (')
+                    add_point((px, py))
+                    buf.write(', ')
+                    add_point((cx - px, cy - py))
+                    buf.write('),\n')
+                case Path.CURVE4:
+                    inx, iny, outx, outy, px, py = points
+                    buf.write('  (')
+                    add_point((px, py))
+                    buf.write(', ')
+                    add_point((inx - inx, outy - outy))
+                    buf.write('),\n')
+                case Path.CLOSEPOLY:
+                    closed = True
+                    point = points
+        self.fout.write(f'place(dx: 0in, dy: 0in,\n    path(')
+        self.fout.write(f'stroke: {stroke}, ')
+        if closed:
+            self.fout.write('closed: true,')
+        self.fout.write('\n')
+        self.fout.write(buf.getvalue())
+        self.fout.write('))\n')
+
+    def draw_text(self, gc: GraphicsContextBase, x: float, y: float, s: str,
+                  prop: FontProperties, angle: float,
+                  ismath: bool | Literal['TeX'] = False, *,
+                  mtext: Text | None = None):
+        print((x, y), s, mtext, ismath, mtext.get_rotation(),
+              mtext.get_rotation_mode())
+        alignment = 'center + horizon'
+        baseline = False
+        fontsize = prop.get_size_in_points()
+        # if mtext and (mtext.get_verticalalignment() != 'center_baseline'):
+        if mtext:
+            pos = mtext.get_unitless_position()
+            x, y = mtext.get_transform().transform(pos)
+            x = x / self.figure.dpi
+            y = self.height - y / self.figure.dpi
+            halign = mtext.get_horizontalalignment()
+            valign = mtext.get_verticalalignment()
+            match valign:
+                case 'center':
+                    valign = 'horizon'
+                case 'center_baseline':
+                    valign = 'horizon'
+                    baseline = True
+                case 'baseline':
+                    valign = 'bottom'
+                    baseline = True
+            print(halign, '+', valign, baseline)
+            alignment = f'{halign} + {valign}'
+            fontsize = mtext.get_fontsize()
+            angle = mtext.get_rotation()
+        else:
+            x = x / self.figure.dpi
+            y = self.height + y / self.figure.dpi
+        # self.fout.write(f'  place(dx: {x}in, dy: {y}in,\n    text([{s}]))\n')
+        self.fout.write(f'  draw_text(dx: {x}in, dy: {y}in, ')
+        self.fout.write(f'size: {fontsize}pt, ')
+        self.fout.write(f'alignment: {alignment}, ')
+        if baseline:
+            self.fout.write(f'baseline: true, ')
+        self.fout.write(f'angle: {360 - angle}deg, ')
+        self.fout.write(f'text([{s}]))\n')
 
     def flipy(self):
-        # docstring inherited
+        """Axis Oy points to bottom."""
         return True
 
-    def get_canvas_width_height(self):
-        # docstring inherited
-        return 100, 100
+    def get_canvas_width_height(self) -> tuple[float, float]:
+        return self.width, self.height
 
-    def get_text_width_height_descent(self, s, prop, ismath):
-        return 1, 1, 1
+    def get_text_width_height_descent(
+            self, s: str, prop: FontProperties,
+            ismath: bool | Literal['TeX'] = False,
+        ) -> tuple[float, float, float]:
+        return super().get_text_width_height_descent(s, prop, ismath)
 
-    def new_gc(self):
-        # docstring inherited
-        return GraphicsContextTemplate()
+    def new_gc(self) -> Type[GraphicsContextBase]:
+        return TypstGraphicsContext()
 
     def points_to_pixels(self, points):
-        # if backend doesn't have dpi, e.g., postscript or svg
-        return points
-        # elif backend assumes a value for pixels_per_inch
-        # return points/72.0 * self.dpi.get() * pixels_per_inch/72.0
-        # else
-        # return points/72.0 * self.dpi.get()
+        return points  # if backend doesn't have dpi, e.g., postscript or svg
 
 
-class GraphicsContextTemplate(GraphicsContextBase):
-    """
-    The graphics context provides the color, line styles, etc.  See the cairo
-    and postscript backends for examples of mapping the graphics context
-    attributes (cap styles, join styles, line widths, colors) to a particular
-    backend.  In cairo this is done by wrapping a cairo.Context object and
-    forwarding the appropriate calls to it using a dictionary mapping styles
-    to gdk constants.  In Postscript, all the work is done by the renderer,
-    mapping line styles to postscript calls.
-
-    If it's more appropriate to do the mapping at the renderer level (as in
-    the postscript backend), you don't need to override any of the GC methods.
-    If it's more appropriate to wrap an instance (as in the cairo backend) and
-    do the mapping here, you'll need to override several of the setter
-    methods.
-
-    The base GraphicsContext stores colors as an RGB tuple on the unit
-    interval, e.g., (0.5, 0.0, 1.0). You may need to map this to colors
-    appropriate for your backend.
+class TypstGraphicsContext(GraphicsContextBase):
+    """In Typst, all the work is done by the renderer, mapping line styles to
+    Typst calls.
     """
 
 
-########################################################################
-#
-# The following functions and classes are for pyplot and implement
-# window/figure managers, etc.
-#
-########################################################################
+class TypstFigureManager(FigureManagerBase):
+    """Non-interactive backend requires nothing."""
 
 
-class FigureManagerTemplate(FigureManagerBase):
-    """
-    Helper class for pyplot mode, wraps everything up into a neat bundle.
-
-    For non-interactive backends, the base class is sufficient.  For
-    interactive backends, see the documentation of the `.FigureManagerBase`
-    class for the list of methods that can/should be overridden.
-    """
-
-
-class FigureCanvasTemplate(FigureCanvasBase):
-    """
-    The canvas the figure renders into.  Calls the draw and print fig
+class TypstFigureCanvas(FigureCanvasBase):
+    """The canvas the figure renders into.  Calls the draw and print fig
     methods, creates the renderers, etc.
-
-    Note: GUI templates will want to connect events for button presses,
-    mouse movements and key presses to functions that call the base
-    class methods button_press_event, button_release_event,
-    motion_notify_event, key_press_event, and key_release_event.  See the
-    implementations of the interactive backends for examples.
 
     Attributes
     ----------
@@ -163,51 +195,97 @@ class FigureCanvasTemplate(FigureCanvasBase):
         A high-level Figure instance
     """
 
-    # The instantiated manager class.  For further customization,
-    # ``FigureManager.create_with_canvas`` can also be overridden; see the
-    # wx-based backends for an example.
-    manager_class = FigureManagerTemplate
+    filetypes = {**FigureCanvasBase.filetypes, 'typ': 'Typst Markup'}
+
+    fixed_dpi: float = 144
+
+    manager_class = TypstFigureManager
 
     def draw(self):
-        """
-        Draw the figure using the renderer.
-
-        It is important that this method actually walk the artist tree
-        even if not output is produced because this will trigger
-        deferred work (like computing limits auto-limits and tick
-        values) that users may want access to before saving to disk.
-        """
-        renderer = RendererTemplate(self.figure.dpi)
-        self.figure.draw(renderer)
-
-    # You should provide a print_xxx function for every file format
-    # you can write.
-
-    # If the file type is not in the base set of filetypes,
-    # you should add it to the class-scope filetypes dictionary as follows:
-    filetypes = {**FigureCanvasBase.filetypes, 'foo': 'My magic Foo format'}
-
-    def print_foo(self, filename, **kwargs):
-        """
-        Write out format foo.
-
-        This method is normally called via `.Figure.savefig` and
-        `.FigureCanvasBase.print_figure`, which take care of setting the figure
-        facecolor, edgecolor, and dpi to the desired output values, and will
-        restore them to the original values.  Therefore, `print_foo` does not
-        need to handle these settings.
-        """
-        self.draw()
+        """Draw the figure using the renderer."""
+        self.figure.draw_without_rendering()
+        super().draw()
 
     def get_default_filetype(self):
-        return 'foo'
+        return 'typ'
+
+    def print_pdf(self, filename, **kwargs):
+        raise NotImplementedError
+
+    def print_png(self, filename, **kwargs):
+        with TemporaryDirectory() as tmpdir:
+            inp_path = pathlib.Path(tmpdir) / 'main.typ'
+            out_path = inp_path.with_suffix('.png')
+            self.print_typ(inp_path, **kwargs)
+            cmd = ['typst', 'compile', f'--root={tmpdir}', '--format=png',
+                   str(inp_path), str(out_path)]
+            print(f'execute command: "{" ".join(cmd)}"')
+            proc = subprocess.run(cmd, capture_output=True)
+            with open(out_path, 'rb') as fin, open(filename, 'wb') as fout:
+                copyfileobj(fin, fout)
+
+    def print_svg(self, filename, **kwargs):
+        raise NotImplementedError
+
+    def print_typ(self, filename, **kwargs):
+        width = self.figure.get_figwidth()
+        height = self.figure.get_figheight()
+        dpi = self.figure.dpi
+        with open(filename, 'w') as fout:
+            fout.write('#set document(title: "testing")\n')
+            fout.write(
+                f'#set page(width: {width}in, height: {height}in, margin: 0pt)\n'
+            )
+            fout.write(PREABMBLE)
+            fout.write(
+                f'#block(spacing: 0pt, above: 0pt, below: 0pt, width: 100%, height: 100%, {{\n'
+            )
+            renderer = TypstRenderer(self.figure, fout, width, height, dpi)
+            self.figure.draw(renderer)
+            fout.write('})\n')
 
 
-########################################################################
-#
-# Now just provide the standard names that backend.__init__ is expecting
-#
-########################################################################
+# Now, just provide the standard names that `backend.__init__` is expecting.
+FigureCanvas = TypstFigureCanvas
+FigureManager = TypstFigureManager
 
-FigureCanvas = FigureCanvasTemplate
-FigureManager = FigureManagerTemplate
+PREABMBLE = """
+#let draw_text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, body) = style(styles => {
+  let top-edge = "cap-height"
+  let bot-edge = "bounds"
+  let valign = alignment.y;
+  if baseline and valign == bottom {
+    bot-edge = "baseline"
+  }
+
+  if baseline and valign == horizon {
+    bot-edge = "baseline"
+  }
+
+  let content = text(size: size, top-edge: top-edge, bottom-edge: bot-edge, body)
+  let shape = measure(content, styles)
+
+  let px = dx
+  if alignment.x == left {
+    // Do nothing.
+  } else if alignment.x == center {
+    px -= shape.width / 2
+  } else if alignment.x == right {
+    px -= shape.width
+  }
+
+  let py = dy
+  if valign == top {
+    // Do nothing.
+  } else if valign == horizon {
+    py -= shape.height / 2
+  } else if valign == bottom {
+    py -= shape.height
+  }
+
+  if angle != 0deg {
+    content = rotate(angle, origin: alignment, content)
+  }
+  place(dx: px, dy: py, content)
+})
+"""

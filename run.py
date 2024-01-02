@@ -6,11 +6,13 @@ from matplotlib.backend_bases import register_backend
 
 import backend_typst
 
-mpl.use('module://backend_typst')
-register_backend('typ', 'backend_typst', 'Typst markup')
-print('current backend is', mpl.get_backend())
+with mpl.rc_context({'backend': 'module://backend_typst'}):
+    print('backend:    ', mpl.get_backend())
+    print('interactive:', mpl.is_interactive())
 
-fig, ax = plt.subplots()
-ax.plot([i ** 2 for i in range(10)], label='x^2')
-ax.legend()
-fig.savefig('out.typ')
+    fig, ax = plt.subplots()
+    ax.plot([i ** 2 for i in range(10)], '-.o', label=r'$x^2$')
+    ax.legend()
+    ax.set_xlabel(r'$x$')
+    ax.set_ylabel(r'$f(x)$')
+    fig.savefig('out.typ')
