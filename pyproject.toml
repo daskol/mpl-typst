@@ -57,3 +57,6 @@ zip-safe = true
 
 [tool.setuptools.packages.find]
 include = ["mpl_typst*"]
+
+[tool.setuptools.package-data]
+mpl_typst = ["*.typ"]
