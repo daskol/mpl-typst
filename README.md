@@ -43,7 +43,15 @@ Also, it is possible to use rendering context as usual to override backend.
 import matplotlib as mpl
 import mpl_typst
 with mpl.rc_context({'backend': 'module://mpl_typst'}):  # or mpl_typst.BACKEND
-   ...
+    ...
+```
+
+Next, you can save your figure to `typ` as usual.
+
+```python
+fig, ax = plt.subplots()
+...
+fig.savefig('line-plot-simple.typ')
 ```
 
 As soon as you get a `typ`-file you can included it directly to `figure`

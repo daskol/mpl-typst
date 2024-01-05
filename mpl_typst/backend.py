@@ -9,7 +9,7 @@ from typing import Any, Literal, Optional, Self, TextIO, Type
 
 from matplotlib import get_cachedir
 from matplotlib.backend_bases import (FigureCanvasBase, FigureManagerBase,
-                                      GraphicsContextBase, RendererBase)
+                                      GraphicsContextBase, RendererBase, register_backend)
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
@@ -360,3 +360,6 @@ class TypstFigureCanvas(FigureCanvasBase):
 # Now, just provide the standard names that `backend.__init__` is expecting.
 FigureCanvas = TypstFigureCanvas
 FigureManager = TypstFigureManager
+
+# Register file format for Typst markup.
+register_backend('typ', 'mpl_typst', 'Typst markup')
