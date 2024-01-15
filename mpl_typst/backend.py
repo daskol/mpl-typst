@@ -141,6 +141,11 @@ class TypstRenderer(RendererBase):
                 result.append(coord)
             return tuple(result)
 
+        # Configure how to fill the path.
+        fill = None
+        if rgbFace is not None:
+            fill = Call('rgb', *[Scalar(c * 100, '%') for c in rgbFace])
+
         # Configure basic appearance of a line.
         if (capstyle := gc.get_capstyle()) == 'projecting':
             capstyle = 'square'
@@ -168,7 +173,7 @@ class TypstRenderer(RendererBase):
                 stroke.kwargs.update({'dash': bounds})
 
         # Construct a `path` routine invokation.
-        line = Call('path', stroke=stroke)
+        line = Call('path', fill=fill, stroke=stroke)
         for points, code in path.iter_segments(transform):
             points = normalize(points)
             match code:
