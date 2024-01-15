@@ -7,19 +7,20 @@ from shutil import copyfileobj
 from tempfile import TemporaryDirectory
 from typing import Any, Literal, Optional, Self, TextIO, Type
 
+import numpy as np
 from matplotlib import get_cachedir
 from matplotlib.backend_bases import (FigureCanvasBase, FigureManagerBase,
-                                      GraphicsContextBase, RendererBase, register_backend)
+                                      GraphicsContextBase, RendererBase,
+                                      register_backend)
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
 from matplotlib.text import Text
 from matplotlib.transforms import Affine2DBase, Transform
 from matplotlib.typing import ColorType
-from numpy.typing import ArrayLike
-
 from mpl_typst.typst import Array, Block, Call, Content, Dictionary, Scalar
 from mpl_typst.typst import Writer as TypstWriter
+from numpy.typing import ArrayLike
 
 __all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
            'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
@@ -141,6 +142,11 @@ class TypstRenderer(RendererBase):
                 result.append(coord)
             return tuple(result)
 
+        # Configure how to fill the path.
+        fill = None
+        if rgbFace is not None:
+            fill = Call('rgb', *[Scalar(c * 100, '%') for c in rgbFace])
+
         # Configure basic appearance of a line.
         if (capstyle := gc.get_capstyle()) == 'projecting':
             capstyle = 'square'
@@ -168,7 +174,7 @@ class TypstRenderer(RendererBase):
                 stroke.kwargs.update({'dash': bounds})
 
         # Construct a `path` routine invokation.
-        line = Call('path', stroke=stroke)
+        line = Call('path', fill=fill, stroke=stroke)
         for points, code in path.iter_segments(transform):
             points = normalize(points)
             match code:
@@ -196,6 +202,55 @@ class TypstRenderer(RendererBase):
         # Place a line path relative to parent block element without layouting.
         place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
         self.main.append(place)
+
+    def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight,
+                       coordinates, offsets, offsetTrans, facecolors,
+                       antialiased, edgecolors):
+        # TODO(@daskol): Apply offset transformation.
+        vertices = np.array([master_transform.transform(point)
+                             for point in coordinates])
+        vertices /= self.dpi  # Points to inches.
+        vertices[..., 1] = self.height - vertices[..., 1]  # Inverted Oy axis.
+
+        # Cast coordinates to term in internal representation.
+        shape = vertices.shape
+        vertices = np.array([Scalar(el, 'in') for el in vertices.flatten()])
+        vertices = vertices.reshape(shape)
+
+        for i in range(vertices.shape[0] - 1):
+            # TODO(@daskol): What about shapes coordinates, facecolors, and
+            # edgecolors?
+            facecolor = [Scalar(c * 100, '%') for c in facecolors[i]]
+            for j in range(vertices.shape[1] - 1):
+                # Create filling color.
+                fill = Call('rgb', *facecolor)
+
+                # Create stroke if line width is given.
+                if edgecolors:
+                    edgecolor = [Scalar(c * 100, '%') for c in edgecolors[i]]
+                else:
+                    edgecolor = facecolor
+                stroke = None
+                if (lw := gc.get_linewidth()) > 0:
+                    paint = Call('rgb', *edgecolor)
+                    stroke = Call('stroke', paint=paint,
+                                  thickness=Scalar(lw, 'pt'))
+
+                # TODO(@daskol): Take into account joints, dashes, and hatches.
+
+                # Select quad and walk over it anti-clockwise.
+                quad = vertices[i:i + 2, j:j + 2]
+                quad = quad.reshape(4, 2)
+                quad = quad[[2, 3, 1, 0]]
+                line = Call('path', fill=fill, stroke=stroke, closed=True)
+                for coords in quad:
+                    point = Array(coords)
+                    line.args.append(point)
+
+                # Put on canvas with respect of the origin.
+                place = Call('place', line,
+                             dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
+                self.main.append(place)
 
     def draw_text(self, gc: GraphicsContextBase, x: float, y: float, s: str,
                   prop: FontProperties, angle: float,
