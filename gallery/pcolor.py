@@ -25,23 +25,27 @@ values = np.array([
     2.1
 ]).reshape(5, 6)
 
-width, height = values.T.shape
-xs, ys = np.mgrid[:width + 1, :height + 1]
-
-with rc_context():
+with rc_context({
+        'text.parse_math': False,
+        'text.usetex': False,
+        'axes.formatter.use_mathtext': False,
+}):
     fig, ax = plt.subplots(figsize=(3.25, 2.01), layout='constrained')
+    ax.set_aspect('equal')
 
+    width, height = values.T.shape
+    xs, ys = np.mgrid[:width + 1, :height + 1]
     img = ax.pcolor(xs, ys, values.T)
 
     divider = make_axes_locatable(ax)
-    cax = divider.append_axes('right', size='8%', pad=0.1)
+    cax = divider.append_axes('right', size='5%', pad=0.1)
     fig.colorbar(img, cax)
 
     ax.set_xlabel('Number of tokens')
     ax.set_xticks(np.arange(len(xticks)))
     ax.set_xticklabels([f'{x:.1f}' if x < 1 else int(x) for x in xticks])
 
-    ax.set_ylabel('Rank r')
+    ax.set_ylabel('Rank $r$')
     ax.set_yticks(np.arange(len(yticks)))
     ax.set_yticklabels([str(x) for x in yticks])
     ax.invert_yaxis()
