@@ -44,6 +44,7 @@ Homepage = "https://github.com/daskol/typst-mpl-backend"
 Repository = "https://github.com/daskol/typst-mpl-backend.git"
 
 [tool.isort]
+known_first_party = ["mpl_typst"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

@@ -1,5 +1,5 @@
-import pathlib
 import logging
+import pathlib
 import re
 import subprocess
 from datetime import date, datetime
@@ -19,9 +19,10 @@ from matplotlib.path import Path
 from matplotlib.text import Text
 from matplotlib.transforms import Affine2DBase, Transform
 from matplotlib.typing import ColorType
+from numpy.typing import ArrayLike
+
 from mpl_typst.typst import Array, Block, Call, Content, Dictionary, Scalar
 from mpl_typst.typst import Writer as TypstWriter
-from numpy.typing import ArrayLike
 
 __all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
            'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
