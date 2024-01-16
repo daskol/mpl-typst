@@ -1,4 +1,5 @@
 import pathlib
+import logging
 import re
 import subprocess
 from datetime import date, datetime
@@ -28,10 +29,62 @@ __all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
 
 PROLOGUE = pathlib.Path(__file__).parent / 'prologue.typ'
 
+MEASURE = pathlib.Path(__file__).parent / 'measure.typ'
+
 RE_ERROR = re.compile(
     r'^(?P<filename>.*):(?P<line>\d+):(?P<column>\d+): error: (?P<reason>.*)$')
 
 TPL_ERROR = '  {filename}:{line}:{column}: {reason}'
+
+RE_SHAPE = re.compile(
+    r'\((?P<width>\d+(\.\d*)?)pt,\s*(?P<height>\d+(\.\d*)?)pt\)')
+
+RE_TEXT_VAR = re.compile(r'{{\s?(?P<var>(content|family|size))\s?}}')
+
+
+def compile_(inp_path: Path, out_path: Path, dpi: int = 144, fmt: str = 'pdf'):
+    tmpdir = inp_path.parent
+    cmd = ['typst', 'compile', f'--root={tmpdir}', f'--format={fmt}',
+           '--diagnostic-format=short', f'--ppi={dpi}', str(inp_path),
+           str(out_path)]
+    proc = subprocess.run(cmd, capture_output=True, cwd=tmpdir)
+    if proc.returncode:
+        kwargs = {'stdout': proc.stdout.decode('utf-8'),
+                  'stderr': proc.stderr.decode('utf-8'),
+                  'errors': []}
+        for m in RE_ERROR.finditer(kwargs['stderr']):
+            error = m.groupdict()
+            error['line'] = int(error['line'])
+            error['column'] = int(error['column'])
+            kwargs['errors'].append(error)
+        raise TypstRenderingError(**kwargs)
+
+
+class Cache(dict):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.total: int = 0
+        self.nohits: int = 0
+
+    @property
+    def hit_rate(self) -> float:
+        if self.total:
+            return self.nohits / self.total
+        return 1.0
+
+    def get(self, key, default=None):
+        self.total += 1
+        self.nohits += int(key in self)
+        return super().get(key, default)
+
+    def clear(self):
+        super().clear()
+        self.total = 0
+        self.nohits = 0
+
+
+_CACHE: dict[tuple[str, str], tuple] = Cache()  # NOTE: Not thread-safe.
 
 
 class TypstRenderingError(RuntimeError):
@@ -300,10 +353,25 @@ class TypstRenderer(RendererBase):
         return self.width, self.height
 
     def get_text_width_height_descent(
-            self, s: str, prop: FontProperties,
-            ismath: bool | Literal['TeX'] = False,
+        self,
+        s: str,
+        prop: FontProperties,
+        ismath: bool | Literal['TeX'] = False,
     ) -> tuple[float, float, float]:
-        return super().get_text_width_height_descent(s, prop, ismath)
+        gc = self.get_gc()
+        try:
+            return gc.measure_text(s, prop)
+        except Exception as e:
+            logging.warn(('fallback to base implementation of '
+                          'get_text_width_height_descent method '
+                          'because of raised exception %s'), e)
+            return super().get_text_width_height_descent(s, prop, ismath)
+
+    def get_gc(self) -> Type[GraphicsContextBase]:
+        """Get default graphical context (GC)."""
+        if getattr(self, 'gc', None) is None:
+            self.gc = self.new_gc()
+        return self.gc
 
     def new_gc(self) -> Type[GraphicsContextBase]:
         return TypstGraphicsContext()
@@ -316,6 +384,75 @@ class TypstGraphicsContext(GraphicsContextBase):
     """In Typst, all the work is done by the renderer, mapping line styles to
     Typst calls.
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cached_text_measures = _CACHE
+
+        self.timestamp = datetime.now().replace(microsecond=0)
+        self.measure_tpl: Optional[str] = None
+
+    def measure_text(self, text: str, font: FontProperties,
+                     dpi: float = 144) -> tuple[float, float, float]:
+        # Look up a text measure in cache first.
+        key = (text, str(font))
+        if (measure := self.cached_text_measures.get(key)):
+            return measure
+
+        # Lazy reading of tempalte for text measuring.
+        if self.measure_tpl is None:
+            with open(MEASURE) as fin:
+                template = fin.read()
+                timestamp = self.timestamp.isoformat()
+                self.measure_tpl = template.replace('{{ date }}', timestamp)
+
+        # Render markup template with variables.
+        def render_text_var(m: re.Match):
+            match key := m.group('var'):
+                case 'content':
+                    return text
+                case 'family':
+                    return font.get_family()[0]
+                case 'size':
+                    return f'{font.get_size():g}'
+                case _:
+                    raise RuntimeError(f'Unknown template variable: {key}.')
+
+        markup = RE_TEXT_VAR.sub(render_text_var, self.measure_tpl)
+
+        with TemporaryDirectory(prefix='typst-', dir=get_cachedir()) as tmpdir:
+            # Render figure in pure textual typst markup.
+            inp_path = pathlib.Path(tmpdir) / 'main.typ'
+            with open(inp_path, 'w') as fout:
+                fout.write(markup)
+
+            # out_path = pathlib.Path('/tmp/output.pdf')
+            out_path = inp_path.with_suffix('.pdf')
+            compile_(inp_path, out_path, dpi=dpi)
+
+            txt_path = out_path.with_suffix('.txt')
+            cmd = ['pdftotext', '-r', str(dpi), '-eol', 'unix',
+                   str(out_path), str(txt_path)]
+            proc = subprocess.run(cmd, capture_output=True, cwd=tmpdir)
+            if proc.returncode:
+                stderr = proc.stderr.decode('utf-8')
+                raise RuntimeError(f'Failed to convert pdf to text: {stderr}.')
+            with open(txt_path) as fin:
+                content = fin.read()
+
+        # Parse text converted from PDF to text lengts.
+        matches: tuple[re.Match] = [*RE_SHAPE.finditer(content)][:2]
+        if len(matches) != 2:
+            raise RuntimeError('Failed extract text measures.')
+
+        width = float(matches[0].group('width'))
+        height = float(matches[1].group('height'))
+        descent = height - float(matches[0].group('height'))
+        measure = (width, height, descent)
+
+        # Add value to cache then return measure.
+        self.cached_text_measures[key] = measure
+        return measure
 
 
 class TypstFigureManager(FigureManagerBase):
@@ -380,27 +517,14 @@ class TypstFigureCanvas(FigureCanvasBase):
             metadata['author'] = 'mpl_typst (Typst Matplotlib backend)'
 
         with TemporaryDirectory(prefix='typst-', dir=get_cachedir()) as tmpdir:
-            # Render figure in pure textual typst markup.
+            # Render figure in pure textual typst markup
             inp_path = pathlib.Path(tmpdir) / 'main.typ'
             self.print_typ(inp_path, metadata=metadata, **kwargs)
 
             # Render typst markup running typst binary.
             out_path = inp_path.with_suffix(f'.{fmt}')
             dpi = kwargs.get('dpi', self.figure.dpi)
-            cmd = ['typst', 'compile', f'--root={tmpdir}', f'--format={fmt}',
-                   '--diagnostic-format=short', f'--ppi={dpi}',
-                   str(inp_path), str(out_path)]
-            proc = subprocess.run(cmd, capture_output=True, cwd=tmpdir)
-            if proc.returncode:
-                kwargs = {'stdout': proc.stdout.decode('utf-8'),
-                          'stderr': proc.stderr.decode('utf-8'),
-                          'errors': []}
-                for m in RE_ERROR.finditer(kwargs['stderr']):
-                    error = m.groupdict()
-                    error['line'] = int(error['line'])
-                    error['column'] = int(error['column'])
-                    kwargs['errors'].append(error)
-                raise TypstRenderingError(**kwargs)
+            compile_(inp_path, out_path, dpi, fmt)
 
             # Move rendered figure from temporary directory to target location.
             if isinstance(filename, BytesIO):
