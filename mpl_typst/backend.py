@@ -131,7 +131,7 @@ class TypstRenderer(RendererBase):
         raise NotImplementedError
 
     def draw_path(self, gc: GraphicsContextBase, path: Path,
-                  transform: Transform, rgbFace: ColorType | None = None):
+                  transform: Transform, rgbFace : "ColorType" = None):
         # Transform y-coordinates since Oy axis is flipped.
         def normalize(coords) -> tuple[float, ...]:
             result = []
@@ -174,35 +174,61 @@ class TypstRenderer(RendererBase):
             else:
                 stroke.kwargs.update({'dash': bounds})
 
-        # Construct a `path` routine invokation.
-        line = Call('path', fill=fill, stroke=stroke)
+
+        # The path in node form, that is [[[[in_handle, node, out_handle] ...], True], [[subpath2, closed]]]
+        superpath = [[[], False]]
+        current_subpath = superpath[-1][0]
         for points, code in path.iter_segments(transform):
+
             points = normalize(points)
+
             match code:
                 case Path.STOP:
                     pass
                 case Path.MOVETO | Path.LINETO:
-                    x, y = points
-                    line.args.append(Array([Scalar(x, 'in'), Scalar(y, 'in')]))
-                case Path.CURVE3:
-                    cx, cy, px, py = points
-                    p = Array([Scalar(px, 'in'), Scalar(py, 'in')])
-                    c = Array([Scalar(cx - px, 'in'), Scalar(cy - py, 'in')])
-                    line.args.append(Array([p, c]))
-                case Path.CURVE4:
-                    inx, iny, outx, outy, px, py = points
-                    p = Array([Scalar(px, 'in'), Scalar(py, 'in')])
-                    inp = Array([Scalar(inx - px, 'in'),
-                                 Scalar(iny - py, 'in')])
-                    out = Array([Scalar(outx - px, 'in'),
-                                 Scalar(outy - py, 'in')])
-                    line.args.append(Array([p, inp, out]))
+                    if code == Path.MOVETO:
+                        superpath.append([[], False])
+                        current_subpath = superpath[-1][0]
+                    p = complex(*points)
+                    current_subpath.append([p, p, p])
+                case Path.CURVE3 | Path.CURVE4:
+                    if code == Path.CURVE3:
+                        qp1, qp2 = complex(*points[:2]), complex(*points[2:])
+                        # Convert quadratic to cubic bezier
+                        qp0 = current_subpath[-1][1]
+                        cp1 = qp0 + 2/3 * (qp1 - qp0)
+                        cp2 = qp2 + 2/3 * (qp1 - qp2)
+                        cp3 = qp2
+                    else:
+                        cp1, cp2, cp3 = complex(*points[:2]), complex(*points[2:4]), complex(*points[4:6])
+                    current_subpath[-1][-1] = cp1
+                    current_subpath.append([cp2, cp3, cp3])
                 case Path.CLOSEPOLY:
-                    line.kwargs.update({'closed': True})
+                    end = current_subpath[0][1]
+                    superpath[-1][1] = True
+                    superpath.append([[], False])
+                    current_subpath = superpath[-1][0]
+                    current_subpath.append([end, end, end])
 
-        # Place a line path relative to parent block element without layouting.
-        place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
-        self.main.append(place)
+
+        for subpath, closed in superpath:
+            if len(subpath) < 2:
+                continue #empty subpath
+            # Construct a `path` routine invokation.
+            line = Call('path', fill=fill, stroke=stroke)
+            if closed:
+                line.kwargs.update({'closed': True})
+
+            for node in subpath:
+                if node[0] == node[1] == node[2]:
+                    line.args.append(Array([Scalar(node[0].real, 'in'), Scalar(node[0].imag, 'in')]))
+                else:
+                    args = node[1], node[0] - node[1], node[2] - node[1]
+                    line.args.append(Array([Array([Scalar(arg.real, 'in'), Scalar(arg.imag, 'in')]) for arg in args]))
+
+            # Place a line path relative to parent block element without layouting.
+            place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
+            self.main.append(place)
 
     def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight,
                        coordinates, offsets, offsetTrans, facecolors,
