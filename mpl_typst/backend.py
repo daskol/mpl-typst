@@ -9,18 +9,19 @@ from typing import Any, Literal, Optional, Self, TextIO, Type
 
 import numpy as np
 from matplotlib import get_cachedir
-from matplotlib.backend_bases import (FigureCanvasBase, FigureManagerBase,
-                                      GraphicsContextBase, RendererBase,
-                                      register_backend)
+from matplotlib.backend_bases import (
+    FigureCanvasBase, FigureManagerBase, GraphicsContextBase, RendererBase,
+    register_backend)
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
 from matplotlib.text import Text
 from matplotlib.transforms import Affine2DBase, Transform
 from matplotlib.typing import ColorType
-from mpl_typst.typst import Array, Block, Call, Content, Dictionary, Scalar
-from mpl_typst.typst import Writer as TypstWriter
 from numpy.typing import ArrayLike
+
+from mpl_typst.typst import (
+    Array, Block, Call, Content, Dictionary, Scalar, Writer as TypstWriter)
 
 __all__ = ('FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
            'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
@@ -85,12 +86,12 @@ class TypstRenderer(RendererBase):
         if self.metadata:
             title = 'none'
             if value := self.metadata.get('title'):
-                escaped = value.replace('"', '\"')
+                escaped = value.replace('"', '"')
                 title = f'"{escaped}"'
 
             author = '()'
             if value := self.metadata.get('author'):
-                escaped = value.replace('"', '\"')
+                escaped = value.replace('"', '"')
                 author = f'"{value}"'
 
             date_ = 'auto'

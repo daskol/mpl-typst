@@ -1,0 +1,80 @@
+name: Nightly
+
+on:
+  schedule:
+    # Every night at 3 am.
+    - cron: '0 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Linting with Python 3.12
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          cache: 'pip'
+          python-version: 3.12
+      - name: Run pre-commit on merge
+        uses: pre-commit/action@v3.0.0
+
+  test:
+    name: Run CPU-only tests with Python 3.12
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache system packages
+        uses: actions/cache@v4
+        id: cache-apt
+        env:
+          cache-name: cache-apt-packages
+        with:
+          path: /var/cache/apt
+          key: ${{ runner.os }}-build-${{ env.cache-name }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}
+            ${{ runner.os }}-build-
+            ${{ runner.os }}
+      - name: Install Git in container
+        run: |
+          rm -rfv /etc/apt/apt.conf.d/docker*
+          apt update
+          apt install -y --no-install-recommends ca-certificates git sqlite3
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.12
+      # TODO(@daskol): Clean up and prepare `pyproject.toml` for packaging and
+      # proper dependency resolution. We must reuse dependency list from
+      # `pyproject.toml`.
+      - name: Install Python dependencies
+        run: |
+          # Mandatory dependencies.
+          python -m pip install jax numpy protobuf pydantic
+          # Testing dependencies.
+          python -m pip install mypy 'pytest>=8.2' pytest-cov pytest-dirty
+      - name: Run all tests with PyTest
+        run: |
+          export PYTHON_TAG=$(
+            python -c 'import sys; print(sys.implementation.cache_tag)')
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          pytest -vv \
+            --cov=mpl_typst \
+            --cov-report=html:coverage/html/${PYTHON_TAG} \
+            --cov-report=xml:coverage/xml/report.${PYTHON_TAG}.xml \
+            --junitxml=pytest/report.${PYTHON_TAG}.xml
+      - name: Upload PyTest report for Python 3.12
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: |
+            coverage
+            pytest
+      # This step never fails but it is useful to monitor status of type
+      # corectness.
+      - name: Check typing
+        run: mypy mpl_typst

@@ -1,3 +1,9 @@
+![Linting and testing][1]
+![Nightly][2]
+
+[1]: https://github.com/nntile/nntile/actions/workflows/on-schedule.yml/badge.svg
+[2]: https://github.com/nntile/nntile/actions/workflows/on-push.yml/badge.svg
+
 # Typst Matplotlib Backend
 
 *Typst backend for matplotlib (Python visualization library).*

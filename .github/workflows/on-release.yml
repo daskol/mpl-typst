@@ -1,0 +1,86 @@
+# See jax-ml/ml_dtypes for origins.
+#
+# https://github.com/jax-ml/ml_dtypes/blob/main/.github/workflows/wheels.yml
+
+name: Build and publish
+
+on:
+  workflow_dispatch: {}  # allows triggering this workflow manually
+  push:
+    branches: # trigger on commits to main branch
+      - main
+  pull_request:  # trigger on pull requests affecting relevant files
+    branches:
+      - main
+    paths:
+      - '**workflows/on-release.yml'
+      - 'pyproject.toml'
+  release:  # trigger on published release
+    types:
+      - published
+
+jobs:
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # ratchet:actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # ratchet:actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install build tools
+        run: python -m pip install build
+
+      - name: Build sdist
+        run: python -m build -s
+
+      - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # ratchet: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  build-wheels:
+    name: Build wheel distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # ratchet:actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # ratchet:actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install build tools
+        run: python -m pip install build
+
+      - name: Build wheel
+        run: python -m build -w
+
+      - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # ratchet: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
+
+  upload-pypi:
+    name: Release and upload to PyPI
+    needs:
+      - build-sdist
+      - build-wheels
+    runs-on: ubuntu-latest
+    # Only publish release to PyPI when a github release is created.
+    if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # ratchet:actions/download-artifact@v4
+        with:
+          # Unpacks sdist and wheel builds to dist/ directory.
+          path: dist
+          merge-multiple: true
+
+      - uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # ratchet:pypa/gh-action-pypi-publish@v1.9
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
