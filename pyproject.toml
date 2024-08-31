@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "typst-mpl-backend"
+name = "mpl-typst"
 description = "Typst backend for matplotlib (Python visualization library)."
 license = {text = "MIT"}
 authors = [
