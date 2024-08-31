@@ -1,0 +1,131 @@
+name: Linting and testing
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Linting with Python 3.12
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull all PR commits
+        if: github.event.pull_request
+        run: |
+          # Un-shallow refs.
+          git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+          # Deepen topic branch; checkout topic branch.
+          git fetch origin ${{ github.ref }}:${{ github.head_ref }} \
+            --depth=$(( ${{ github.event.pull_request.commits }} + 1 ))
+          git checkout ${{ github.event.pull_request.head.ref }}
+          # Fetch main for common origin.
+          git fetch origin main:main --depth=100
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          cache: 'pip'
+          python-version: 3.12
+      - name: Run pre-commit on pull request
+        uses: pre-commit/action@v3.0.0
+        if: github.event.pull_request
+        with:
+          extra_args: >
+            --from-ref "$(git merge-base main HEAD)"
+            --to-ref "${{ github.head_ref }}"
+      - name: Run pre-commit on merge
+        uses: pre-commit/action@v3.0.0
+        if: '!github.event.pull_request'
+
+  test:
+    name: Run tests with Python 3.12
+    runs-on: 'ubuntu-24.04'
+    container:
+      image: 'ubuntu:24.04'
+    steps:
+      - name: Cache system packages
+        uses: actions/cache@v4
+        id: cache-apt
+        env:
+          cache-name: cache-apt-packages
+        with:
+          path: /var/cache/apt
+          key: ${{ runner.os }}-build-${{ env.cache-name }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}
+            ${{ runner.os }}-build-
+            ${{ runner.os }}
+      - name: Install Git in container
+        run: |
+          rm -rfv /etc/apt/apt.conf.d/docker*
+          apt update
+          apt install -y --no-install-recommends ca-certificates git sqlite3
+      # NOTE Step order is important for checkout in container: git
+      # installation in container precedes repo checkout.
+      # NOTE Values of ${GITHUB_WORKSPACE} and ${{ github.workspace }} differ
+      # (see https://github.com/actions/checkout/issues/785 for details).
+      - uses: actions/checkout@v4
+      - name: Pull all PR commits
+        if: github.event.pull_request
+        run: |
+          # Restore `.git` location.
+          git config --global --add safe.directory ${GITHUB_WORKSPACE}
+          git config --list
+          # Un-shallow refs.
+          git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+          # Deepen topic branch; checkout topic branch.
+          git fetch origin ${{ github.ref }}:${{ github.head_ref }} \
+            --depth=$(( ${{ github.event.pull_request.commits }} + 1 ))
+          git checkout ${{ github.event.pull_request.head.ref }}
+          # Fetch main for common origin.
+          git fetch origin main:main --depth=100
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.12
+      # TODO(@daskol): Clean up and prepare `pyproject.toml` for packaging and
+      # proper dependency resolution. We must reuse dependency list from
+      # `pyproject.toml`.
+      - name: Install Python dependencies
+        run: |
+          # Mandatory dependencies.
+          python -m pip install jax numpy protobuf pydantic
+          # Testing dependencies.
+          python -m pip install mypy 'pytest>=8.2' pytest-cov pytest-dirty
+      - name: Run dirty tests with PyTest
+        if: 'github.event.pull_request'
+        run: |
+          export PYTHON_TAG=$(
+            python -c 'import sys; print(sys.implementation.cache_tag)')
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          .github/scripts/run-dirty-tests.sh \
+            ${{ github.event.pull_request.head.ref }}
+      - name: Run all tests with PyTest
+        if: '!github.event.pull_request'
+        run: |
+          export PYTHON_TAG=$(
+            python -c 'import sys; print(sys.implementation.cache_tag)')
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          pytest -vv \
+            --cov=mpl_typst \
+            --cov-report=html:coverage/html/${PYTHON_TAG} \
+            --cov-report=xml:coverage/xml/report.${PYTHON_TAG}.xml \
+            --junitxml=pytest/report.${PYTHON_TAG}.xml
+      - name: Upload PyTest report for Python 3.12
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: |
+            coverage
+            pytest
+      # This step never fails but it is useful to monitor status of type
+      # corectness.
+      - name: Check typing
+        run: mypy mpl_typst || true
