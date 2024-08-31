@@ -37,20 +37,59 @@ dependencies = ["matplotlib"]
 requires-python = ">=3.11,<4"
 
 [project.optional-dependencies]
-dev = ["flake8", "isort", "pytest>=7"]
+dev = ["isort", "pytest>=8", "ruff"]
 
 [project.urls]
 Homepage = "https://github.com/daskol/typst-mpl-backend"
 Repository = "https://github.com/daskol/typst-mpl-backend.git"
 
 [tool.isort]
+combine_as_imports = true
+known_first_party = ["mpl_typst"]
+multi_line_output = 4
+
+[tool.mypy]
+no_implicit_optional = true
+
+show_column_numbers = true
+show_error_codes = true
+show_error_context = false
+
+warn_unused_ignores = true
+
+plugins = ["numpy.typing.mypy_plugin"]
 
 [tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-ra -q"
+minversion = "8.2"
+addopts = "-ra -q -m 'not slow'"
 testpaths = ["mpl_typst"]
-markers = [ ]
+markers = [
+    "slow: slow tests (deselect with '-m \"not slow\"')",
+]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+indent-width = 4
+line-length = 79
+extend-exclude = ["*_pb2.py"]
+
+
+[tool.ruff.format]
+# Prefer single quotes over double quotes
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "F", "NPY", "PYI", "PTH", "Q"]
+ignore = ["PTH123"]
+preview = true
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "single"
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 79
+max-line-length = 79
 
 [tool.setuptools]
 zip-safe = true

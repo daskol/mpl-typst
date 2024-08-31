@@ -33,9 +33,10 @@ from pathlib import Path
 from typing import Any, Generator
 
 import matplotlib as mpl
-from mpl_typst.backend import (FigureCanvas, FigureManager, TypstFigureCanvas,
-                               TypstFigureManager, TypstRenderer,
-                               TypstRenderingError)
+
+from mpl_typst.backend import (
+    FigureCanvas, FigureManager, TypstFigureCanvas, TypstFigureManager,
+    TypstGraphicsContext, TypstRenderer, TypstRenderingError)
 
 __all__ = ('BACKEND', 'FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
            'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
