@@ -225,10 +225,10 @@ class TypstRenderer(RendererBase):
 
             for node in subpath:
                 if node[0] == node[1] == node[2]:
-                    line.args += [node2array(node[0])]
+                    line.args.append(node2array(node[0]))
                 else:
                     args = node[1], node[0] - node[1], node[2] - node[1]
-                    line.args += [Array([node2array(arg) for arg in args])]
+                    line.args.append(Array([node2array(arg) for arg in args]))
 
             # Place a line path relative to parent block element without
             # layouting.
