@@ -96,7 +96,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           # Mandatory dependencies.
-          python -m pip install jax numpy protobuf pydantic
+          python -m pip install matplotlib 'numpy>=2'
           # Testing dependencies.
           python -m pip install mypy 'pytest>=8.2' pytest-cov pytest-dirty
       - name: Run dirty tests with PyTest
