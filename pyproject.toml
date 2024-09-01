@@ -33,11 +33,12 @@ classifiers = [
     "Topic :: Utilities",
     "Typing :: Typed",
 ]
-dependencies = ["matplotlib"]
+dependencies = ["matplotlib", "numpy"]
 requires-python = ">=3.11,<4"
 
 [project.optional-dependencies]
 dev = ["isort", "pytest>=8", "ruff"]
+test = ["pillow", "numpy"]
 
 [project.urls]
 Homepage = "https://github.com/daskol/typst-mpl-backend"
