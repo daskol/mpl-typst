@@ -131,7 +131,7 @@ class TypstRenderer(RendererBase):
         raise NotImplementedError
 
     def draw_path(self, gc: GraphicsContextBase, path: Path,
-                  transform: Transform, rgbFace : "ColorType" = None):
+                  transform: Transform, rgbFace: ColorType | None = None):
         # Transform y-coordinates since Oy axis is flipped.
         def normalize(coords) -> tuple[float, ...]:
             result = []
@@ -174,8 +174,8 @@ class TypstRenderer(RendererBase):
             else:
                 stroke.kwargs.update({'dash': bounds})
 
-
-        # The path in node form, that is [[[[in_handle, node, out_handle] ...], True], [[subpath2, closed]]]
+        # The path in node form, that is [[[[in_handle, node, out_handle] ...],
+        # True], [[subpath2, closed]]].
         superpath = [[[], False]]
         current_subpath = superpath[-1][0]
         for points, code in path.iter_segments(transform):
@@ -196,11 +196,13 @@ class TypstRenderer(RendererBase):
                         qp1, qp2 = complex(*points[:2]), complex(*points[2:])
                         # Convert quadratic to cubic bezier
                         qp0 = current_subpath[-1][1]
-                        cp1 = qp0 + 2/3 * (qp1 - qp0)
-                        cp2 = qp2 + 2/3 * (qp1 - qp2)
+                        cp1 = qp0 + 2 / 3 * (qp1 - qp0)
+                        cp2 = qp2 + 2 / 3 * (qp1 - qp2)
                         cp3 = qp2
                     else:
-                        cp1, cp2, cp3 = complex(*points[:2]), complex(*points[2:4]), complex(*points[4:6])
+                        cp1 = complex(*points[:2])
+                        cp2 = complex(*points[2:4])
+                        cp3 = complex(*points[4:6])
                     current_subpath[-1][-1] = cp1
                     current_subpath.append([cp2, cp3, cp3])
                 case Path.CLOSEPOLY:
@@ -210,10 +212,12 @@ class TypstRenderer(RendererBase):
                     current_subpath = superpath[-1][0]
                     current_subpath.append([end, end, end])
 
+        def node2array(node: complex) -> Array:
+            return Array([Scalar(node.real, 'in'), Scalar(node.imag, 'in')])
 
         for subpath, closed in superpath:
             if len(subpath) < 2:
-                continue #empty subpath
+                continue  # Empty subpath.
             # Construct a `path` routine invokation.
             line = Call('path', fill=fill, stroke=stroke)
             if closed:
@@ -221,12 +225,13 @@ class TypstRenderer(RendererBase):
 
             for node in subpath:
                 if node[0] == node[1] == node[2]:
-                    line.args.append(Array([Scalar(node[0].real, 'in'), Scalar(node[0].imag, 'in')]))
+                    line.args += [node2array(node[0])]
                 else:
                     args = node[1], node[0] - node[1], node[2] - node[1]
-                    line.args.append(Array([Array([Scalar(arg.real, 'in'), Scalar(arg.imag, 'in')]) for arg in args]))
+                    line.args += [Array([node2array(arg) for arg in args])]
 
-            # Place a line path relative to parent block element without layouting.
+            # Place a line path relative to parent block element without
+            # layouting.
             place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
             self.main.append(place)
 
