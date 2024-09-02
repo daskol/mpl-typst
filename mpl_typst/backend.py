@@ -1,18 +1,22 @@
+import base64
 import codecs
+import itertools
 import pathlib
 import re
 import subprocess
 from datetime import date, datetime
-from io import BytesIO
-from shutil import copyfileobj
+from io import BytesIO, StringIO
+from shutil import copyfileobj, move
 from tempfile import TemporaryDirectory
 from typing import Any, Literal, Optional, Self, TextIO, Type
 
+import matplotlib
 import numpy as np
 from matplotlib import get_cachedir
 from matplotlib.backend_bases import (
     FigureCanvasBase, FigureManagerBase, GraphicsContextBase, RendererBase,
     register_backend)
+from matplotlib.backends.backend_mixed import MixedModeRenderer
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
@@ -20,6 +24,7 @@ from matplotlib.text import Text
 from matplotlib.transforms import Affine2DBase, Transform
 from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
+from PIL import Image, ImageOps
 
 from mpl_typst.config import compiler
 from mpl_typst.typst import (
@@ -62,16 +67,25 @@ class TypstRenderer(RendererBase):
     """Typst renderer handles drawing/rendering operations."""
 
     def __init__(self, figure: Figure, fout: TextIO,
-                 metadata: dict[str, str] = {}):
+                 metadata: dict[str, str] = {}, image_dpi=72, basename=None):
         super().__init__()
         self.figure = figure
         self.fout = fout
+        self.image_dpi = image_dpi
         self.metadata = metadata
+
+        if basename is None:
+            basename = getattr(fout, 'name', '')
+            if not isinstance(basename, str):
+                basename = ''
+        self.basename = basename
 
         self.width = self.figure.get_figwidth()
         self.height = self.figure.get_figheight()
-        self.dpi = self.figure.dpi
+        self.dpi = figure.dpi
         self.timestamp = datetime.now().replace(microsecond=0)
+
+        self._image_counter = itertools.count()
 
         self.writer: Optional[TypstWriter] = None
         self.main: Optional[Block] = None
@@ -81,6 +95,8 @@ class TypstRenderer(RendererBase):
         with open(PROLOGUE) as fin:
             template = fin.read()
             text = template.replace('{{ date }}', self.timestamp.isoformat())
+            text = text.replace('{{ preamble }}',
+                                matplotlib.rcParams['pgf.preamble'])
         self.fout.write(text)
         self.fout.write('\n')
 
@@ -128,9 +144,51 @@ class TypstRenderer(RendererBase):
                     height=Scalar(self.height, 'in'))
         expr.to_string(self.writer)
 
+    def draw_gouraud_triangles(self, gc, triangles_array, colors_array,
+                               transform):
+        pass
+
     def draw_image(self, gc: GraphicsContextBase, x: float, y: float,
                    im: ArrayLike, transform: Affine2DBase | None = None):
-        raise NotImplementedError
+        # This methods closely follows the SVG backend
+
+        h, w = im.shape[:2]
+
+        if w == 0 or h == 0:
+            return
+
+        # TODO Clips as soon as Typst supports them
+        # TODO Links, Transforms (except translate)
+
+        data = ''
+
+        img = ImageOps.flip(Image.fromarray(im))
+
+        if transform is None:
+            w = w / self.image_dpi
+            h = h / self.image_dpi
+
+        if matplotlib.rcParams['svg.image_inline']:
+            buf = BytesIO()
+            img.save(buf, format='png')
+            data = '"' + base64.b64encode(buf.getvalue()).decode('ascii') + '"'
+            image = Call('image.decode', Call('base64.decode', data),
+                         format='"png"', width=Scalar(w, 'in'),
+                         height=Scalar(h, 'in'))
+        else:
+            if self.basename is None:
+                raise ValueError('Cannot save image data to filesystem when '
+                                 'writing SVG to an in-memory buffer')
+            filename = pathlib.Path(self.basename).with_suffix(
+                f'.image{next(self._image_counter)}.png')
+            img.save(filename)
+            data = filename
+            image = Call('image', f'"{filename.name}"',
+                         width=Scalar(w, 'in'), height=Scalar(h, 'in'))
+
+        place = Call('place', image, dx=Scalar(x / self.dpi, 'in'),
+                     dy=Scalar(self.height - y / self.dpi - h, 'in'))
+        self.main.append(place)
 
     def draw_path(self, gc: GraphicsContextBase, path: Path,
                   transform: Transform, rgbFace: ColorType | None = None):
@@ -363,11 +421,24 @@ class TypstFigureCanvas(FigureCanvasBase):
     def print_svg(self, filename, **kwargs):
         return self._print_as('svg', filename, **kwargs)
 
-    def print_typ(self, filename, *, metadata=None, **kwargs):
+    def print_typ(self, filename, *, bbox_inches_restore=None, metadata=None,
+                  **kwargs):
         # TODO(@daskol): Matplotlib shows quite unexpectedbehaviour. It renders
         # the same figure multiple types with randering to temporary buffer
         # (BytesIO) rather than directly to file. So, it would be great to
         # rewrite this function and neighnoring one to make it file-agnostic.
+        def _render_to_stream(buf):
+            width, height = self.figure.get_size_inches()
+            dpi = self.figure.dpi
+            self.figure.dpi = 72
+            with TypstRenderer(self.figure, buf, metadata or {},
+                               image_dpi=dpi) as tr:
+                renderer = MixedModeRenderer(self.figure, width, height,
+                                             dpi, tr,
+                    bbox_inches_restore=bbox_inches_restore)
+
+                self.figure.draw(renderer)
+
         if isinstance(filename, BytesIO):
             buffer = codecs.getwriter('utf-8')(filename)
             metadata = metadata or {}
@@ -375,9 +446,7 @@ class TypstFigureCanvas(FigureCanvasBase):
                 self.figure.draw(renderer)
         else:
             with open(filename, 'w') as fout:
-                metadata = metadata or {}
-                with TypstRenderer(self.figure, fout, metadata) as renderer:
-                    self.figure.draw(renderer)
+                _render_to_stream(fout)
 
     def _print_as(self, fmt, filename, *, metadata=None, **kwargs):
         # Set up default metadata. We use metadata as a condition for setting
@@ -418,7 +487,7 @@ class TypstFigureCanvas(FigureCanvasBase):
             else:
                 dst_path = pathlib.Path(filename)
                 dst_path.parent.mkdir(exist_ok=True, parents=True)
-                out_path.rename(dst_path)
+                move(out_path, dst_path)
 
 
 # Now, just provide the standard names that `backend.__init__` is expecting.

@@ -28,8 +28,23 @@ into LaTeX markup directly.
 
 ## Usage
 
-In order to render image with `mpl_typst` one can import `mpl_typst.as_default`
-module in order to use `mpl_typst` backend by default.
+To export a figure using typst, just add
+
+```py
+import matplotlib
+import mpl_typst
+
+# your drawing code
+
+fig.savefig('figure.typ')
+```
+
+You may call `plt.show()` afterwards, which displays the figure using your
+default `agg` backend.
+
+In order to set the `mpl_typst` module as default backend (which deactivates
+interactivity, but also renders SVG, PNG and PDF using typst) one can import
+`mpl_typst.as_default` module in order to use `mpl_typst` backend by default.
 
 ```python
 import mpl_typst.as_default
@@ -38,7 +53,7 @@ import mpl_typst.as_default
 Or one can configure it manually.
 
 ```python
-import matplotlib
+import matplotlib as mpl
 import mpl_typst
 mpl.use('module://mpl_typst')
 ```
@@ -59,6 +74,7 @@ fig, ax = plt.subplots()
 ...
 fig.savefig('line-plot-simple.typ')
 ```
+
 
 As soon as you get a `typ`-file you can included it directly to `figure`
 function and adjust figure time.
