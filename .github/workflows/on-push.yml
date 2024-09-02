@@ -66,7 +66,17 @@ jobs:
         run: |
           rm -rfv /etc/apt/apt.conf.d/docker*
           apt update
-          apt install -y --no-install-recommends ca-certificates git sqlite3
+          apt install -y --no-install-recommends \
+            ca-certificates git sqlite3 wget xz-utils
+      - name: Install Typst binary
+        env:
+          TYPST_RELEASE: https://github.com/typst/typst/releases/download
+        run: |
+          mkdir -p /usr/src/typst
+          cd /usr/src/typst
+          wget "$TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz"
+          tar xf typst-x86_64-unknown-linux-musl.tar.xz
+          install -Dm 755 -t /usr/local/bin typst-x86_64-unknown-linux-musl/typst
       # NOTE Step order is important for checkout in container: git
       # installation in container precedes repo checkout.
       # NOTE Values of ${GITHUB_WORKSPACE} and ${{ github.workspace }} differ
@@ -99,16 +109,7 @@ jobs:
           python -m pip install matplotlib 'numpy>=2'
           # Testing dependencies.
           python -m pip install mypy 'pytest>=8.2' pytest-cov pytest-dirty
-      - name: Run dirty tests with PyTest
-        if: 'github.event.pull_request'
-        run: |
-          export PYTHON_TAG=$(
-            python -c 'import sys; print(sys.implementation.cache_tag)')
-          export PYTHONPATH=$PWD:$PYTHONPATH
-          .github/scripts/run-dirty-tests.sh \
-            ${{ github.event.pull_request.head.ref }}
       - name: Run all tests with PyTest
-        if: '!github.event.pull_request'
         run: |
           export PYTHON_TAG=$(
             python -c 'import sys; print(sys.implementation.cache_tag)')
