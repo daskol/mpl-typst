@@ -45,7 +45,17 @@ jobs:
         run: |
           rm -rfv /etc/apt/apt.conf.d/docker*
           apt update
-          apt install -y --no-install-recommends ca-certificates git sqlite3
+          apt install -y --no-install-recommends \
+            ca-certificates git sqlite3 wget xz-utils
+      - name: Install Typst binary
+        env:
+          TYPST_RELEASE: https://github.com/typst/typst/releases/download
+        run: |
+          mkdir -p /usr/src/typst
+          cd /usr/src/typst
+          wget $TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz
+          tar xf typst-x86_64-unknown-linux-musl.tar.xz
+          install -Dm 755 -t /usr/local/bin typst-x86_64-unknown-linux-musl/typst
       - name: Set up Python 3.12
         uses: actions/setup-python@v4
         with:
