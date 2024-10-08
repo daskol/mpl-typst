@@ -53,7 +53,7 @@ jobs:
         run: |
           mkdir -p /usr/src/typst
           cd /usr/src/typst
-          wget $TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz
+          wget "$TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz"
           tar xf typst-x86_64-unknown-linux-musl.tar.xz
           install -Dm 755 -t /usr/local/bin typst-x86_64-unknown-linux-musl/typst
       - name: Set up Python 3.12
@@ -66,7 +66,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           # Mandatory dependencies.
-          python -m pip install jax numpy protobuf pydantic
+          python -m pip install matplotlib 'numpy>=2'
           # Testing dependencies.
           python -m pip install mypy 'pytest>=8.2' pytest-cov pytest-dirty
       - name: Run all tests with PyTest
@@ -89,4 +89,4 @@ jobs:
       # This step never fails but it is useful to monitor status of type
       # corectness.
       - name: Check typing
-        run: mypy mpl_typst
+        run: mypy mpl_typst || true
