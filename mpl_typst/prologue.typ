@@ -5,7 +5,7 @@
  * Timestamp: {{ date }}.
  */
 
-#let draw-text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, body) = style(styles => {
+#let draw-text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, body) = context {
   // In order to align a text properly, we need to configure bounding box of a
   // text.
   let top-edge = "cap-height"
@@ -20,7 +20,7 @@
 
   // Measure shape of text block.
   let content = text(size: size, top-edge: top-edge, bottom-edge: bot-edge, body)
-  let shape = measure(content, styles)
+  let shape = measure(content)
 
   // Adjust horizontal position.
   let px = dx
@@ -50,4 +50,4 @@
 
   // Finaly, place a content block in calculated displacement.
   place(dx: px, dy: py, content)
-})
+}
