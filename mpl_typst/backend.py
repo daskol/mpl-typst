@@ -397,7 +397,7 @@ class TypstFigureCanvas(FigureCanvasBase):
             with TypstRenderer(self.figure, buf, metadata or {}) as renderer:
                 self.figure.draw(renderer)
             content = buf.getvalue().encode('utf-8')
-            buf.write(content)
+            filename.write(content)
         else:
             with open(filename, 'w') as fout:
                 metadata = metadata or {}
