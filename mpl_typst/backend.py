@@ -1,8 +1,9 @@
+import codecs
 import pathlib
 import re
 import subprocess
 from datetime import date, datetime
-from io import BytesIO, StringIO
+from io import BytesIO
 from shutil import copyfileobj
 from tempfile import TemporaryDirectory
 from typing import Any, Literal, Optional, Self, TextIO, Type
@@ -393,11 +394,10 @@ class TypstFigureCanvas(FigureCanvasBase):
         # (BytesIO) rather than directly to file. So, it would be great to
         # rewrite this function and neighnoring one to make it file-agnostic.
         if isinstance(filename, BytesIO):
-            buf = StringIO()
-            with TypstRenderer(self.figure, buf, metadata or {}) as renderer:
+            buffer = codecs.getwriter('utf-8')(filename)
+            metadata = metadata or {}
+            with TypstRenderer(self.figure, buffer, metadata) as renderer:
                 self.figure.draw(renderer)
-            content = buf.getvalue().encode('utf-8')
-            buf.write(content)
         else:
             with open(filename, 'w') as fout:
                 metadata = metadata or {}
