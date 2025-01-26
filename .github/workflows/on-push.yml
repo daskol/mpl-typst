@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   lint:
-    name: Linting with Python 3.12
+    name: Linting with Python 3.12 (default)
     runs-on: 'ubuntu-24.04'
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
           git checkout ${{ github.event.pull_request.head.ref }}
           # Fetch main for common origin.
           git fetch origin main:main --depth=100
-      - name: Set up Python 3.12
+      - name: Set up Python 3.12 (default)
         uses: actions/setup-python@v5
         with:
           cache: 'pip'
@@ -45,61 +45,29 @@ jobs:
         if: '!github.event.pull_request'
 
   test:
-    name: Run tests with Python 3.12
+    name: Run tests with Python ${{ matrix.python-version }}
     runs-on: 'ubuntu-24.04'
-    container:
-      image: 'ubuntu:24.04'
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
     steps:
-      - name: Cache system packages
-        uses: actions/cache@v4
-        id: cache-apt
-        env:
-          cache-name: cache-apt-packages
-        with:
-          path: /var/cache/apt
-          key: ${{ runner.os }}-build-${{ env.cache-name }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}
-            ${{ runner.os }}-build-
-            ${{ runner.os }}
-      - name: Install Git in container
-        run: |
-          rm -rfv /etc/apt/apt.conf.d/docker*
-          apt update
-          apt install -y --no-install-recommends \
-            ca-certificates git sqlite3 wget xz-utils
+      - uses: actions/checkout@v4
       - name: Install Typst binary
         env:
           TYPST_RELEASE: https://github.com/typst/typst/releases/download
         run: |
-          mkdir -p /usr/src/typst
-          cd /usr/src/typst
+          mkdir -p "$HOME/.cache/typst"
+          cd "$HOME/.cache/typst"
           wget "$TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz"
           tar xf typst-x86_64-unknown-linux-musl.tar.xz
-          install -Dm 755 -t /usr/local/bin typst-x86_64-unknown-linux-musl/typst
-      # NOTE Step order is important for checkout in container: git
-      # installation in container precedes repo checkout.
-      # NOTE Values of ${GITHUB_WORKSPACE} and ${{ github.workspace }} differ
-      # (see https://github.com/actions/checkout/issues/785 for details).
-      - uses: actions/checkout@v4
-      - name: Pull all PR commits
-        if: github.event.pull_request
-        run: |
-          # Restore `.git` location.
-          git config --global --add safe.directory ${GITHUB_WORKSPACE}
-          git config --list
-          # Un-shallow refs.
-          git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-          # Deepen topic branch; checkout topic branch.
-          git fetch origin ${{ github.ref }}:${{ github.head_ref }} \
-            --depth=$(( ${{ github.event.pull_request.commits }} + 1 ))
-          git checkout ${{ github.event.pull_request.head.ref }}
-          # Fetch main for common origin.
-          git fetch origin main:main --depth=100
-      - name: Set up Python 3.12
+          install -Dm 755 -t "$HOME/.local/bin" typst-x86_64-unknown-linux-musl/typst
+          rm -rfv typst-x86_64-unknown-linux-musl.tar.xz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"  # XXX Magic.
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: 3.12
+          cache: 'pip'
+          python-version: ${{ matrix.python-version }}
       # TODO(@daskol): Clean up and prepare `pyproject.toml` for packaging and
       # proper dependency resolution. We must reuse dependency list from
       # `pyproject.toml`.
@@ -119,10 +87,10 @@ jobs:
             --cov-report=html:coverage/html/${PYTHON_TAG} \
             --cov-report=xml:coverage/xml/report.${PYTHON_TAG}.xml \
             --junitxml=pytest/report.${PYTHON_TAG}.xml
-      - name: Upload PyTest report for Python 3.12
+      - name: Upload PyTest report for Python ${{ matrix.python-version }}
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-report
+          name: pytest-report-${{ matrix.python-version }}
           path: |
             coverage
             pytest
