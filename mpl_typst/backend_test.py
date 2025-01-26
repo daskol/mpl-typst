@@ -3,6 +3,7 @@ from io import BytesIO
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 from matplotlib.patches import PathPatch
 from matplotlib.path import Path
 from numpy.testing import assert_array_equal
@@ -82,3 +83,29 @@ class TestTypstRenderer:
         img = Image.open(data_dir / 'draw_path.png')
         expected = np.asarray(img)
         assert_array_equal(actual, expected)
+
+
+class TestTypstFigureCanvas:
+
+    @pytest.mark.parametrize('how', ['buffer', 'path', 'str'])
+    def test_print_typ(self, how: str, tmp_path: Path):
+        fig, ax = plt.subplots(1, 1)
+        x = np.linspace(0.0, 2 * np.pi, 100)
+        y = np.sin(x)
+        ax.plot(x, y)
+
+        if how == 'buffer':
+            buffer = BytesIO()
+            with rc_context():
+                fig.savefig(buffer, format='typ')
+            assert buffer.tell() > 0
+        elif how in ('path', 'str'):
+            filename = tmp_path / 'output.typ'
+            fname: str | Path = filename
+            if how == 'str':
+                fname = str(fname)
+            with rc_context():
+                fig.savefig(fname, format='typ')
+            assert filename.stat().st_size > 0
+        else:
+            raise RuntimeError(f'Unexpected test parameter: how={how}.')
