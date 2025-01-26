@@ -13,53 +13,43 @@ jobs:
     name: Linting with Python 3.12
     runs-on: 'ubuntu-24.04'
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Set up Python 3.12 (default)
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           cache: 'pip'
           python-version: 3.12
-      - name: Run pre-commit on merge
-        uses: pre-commit/action@v3.0.0
+
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
 
   test:
-    name: Run tests with Python 3.12
+    name: Run tests with Python ${{ matrix.python-version }}
     runs-on: 'ubuntu-24.04'
-    container:
-      image: 'ubuntu:24.04'
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - name: Cache system packages
-        uses: actions/cache@v4
-        id: cache-apt
-        env:
-          cache-name: cache-apt-packages
-        with:
-          path: /var/cache/apt
-          key: ${{ runner.os }}-build-${{ env.cache-name }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}
-            ${{ runner.os }}-build-
-            ${{ runner.os }}
-      - name: Install Git in container
-        run: |
-          rm -rfv /etc/apt/apt.conf.d/docker*
-          apt update
-          apt install -y --no-install-recommends \
-            ca-certificates git sqlite3 wget xz-utils
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
       - name: Install Typst binary
         env:
-          TYPST_RELEASE: https://github.com/typst/typst/releases/download
+          TYPST_RELEASE: 'https://github.com/typst/typst/releases/download'
+          TYPST_VERSION: '0.12.0'
         run: |
-          mkdir -p /usr/src/typst
-          cd /usr/src/typst
-          wget "$TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz"
+          mkdir -p "$HOME/.cache/typst"
+          cd "$HOME/.cache/typst"
+          wget "$TYPST_RELEASE/v$TYPST_VERSION/typst-x86_64-unknown-linux-musl.tar.xz"
           tar xf typst-x86_64-unknown-linux-musl.tar.xz
-          install -Dm 755 -t /usr/local/bin typst-x86_64-unknown-linux-musl/typst
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
+          install -Dm 755 -t "$HOME/.local/bin" typst-x86_64-unknown-linux-musl/typst
+          rm -rfv typst-x86_64-unknown-linux-musl.tar.xz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"  # XXX Magic.
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
-          python-version: 3.12
+          cache: 'pip'
+          python-version: ${{ matrix.python-version }}
+
       # TODO(@daskol): Clean up and prepare `pyproject.toml` for packaging and
       # proper dependency resolution. We must reuse dependency list from
       # `pyproject.toml`.
@@ -79,13 +69,14 @@ jobs:
             --cov-report=html:coverage/html/${PYTHON_TAG} \
             --cov-report=xml:coverage/xml/report.${PYTHON_TAG}.xml \
             --junitxml=pytest/report.${PYTHON_TAG}.xml
-      - name: Upload PyTest report for Python 3.12
-        uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
         with:
-          name: pytest-report
+          name: pytest-report-${{ matrix.python-version }}
           path: |
             coverage
             pytest
+
       # This step never fails but it is useful to monitor status of type
       # corectness.
       - name: Check typing
