@@ -16,7 +16,8 @@ jobs:
     name: Linting with Python 3.12 (default)
     runs-on: 'ubuntu-24.04'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
       - name: Pull all PR commits
         if: github.event.pull_request
         run: |
@@ -28,20 +29,23 @@ jobs:
           git checkout ${{ github.event.pull_request.head.ref }}
           # Fetch main for common origin.
           git fetch origin main:main --depth=100
+
       - name: Set up Python 3.12 (default)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           cache: 'pip'
           python-version: 3.12
+
       - name: Run pre-commit on pull request
-        uses: pre-commit/action@v3.0.0
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
         if: github.event.pull_request
         with:
           extra_args: >
             --from-ref "$(git merge-base main HEAD)"
             --to-ref "${{ github.head_ref }}"
+
       - name: Run pre-commit on merge
-        uses: pre-commit/action@v3.0.0
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
         if: '!github.event.pull_request'
 
   test:
@@ -51,7 +55,8 @@ jobs:
       matrix:
         python-version: ['3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
       - name: Install Typst binary
         env:
           TYPST_RELEASE: https://github.com/typst/typst/releases/download
@@ -63,11 +68,12 @@ jobs:
           install -Dm 755 -t "$HOME/.local/bin" typst-x86_64-unknown-linux-musl/typst
           rm -rfv typst-x86_64-unknown-linux-musl.tar.xz
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"  # XXX Magic.
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           cache: 'pip'
           python-version: ${{ matrix.python-version }}
+
       # TODO(@daskol): Clean up and prepare `pyproject.toml` for packaging and
       # proper dependency resolution. We must reuse dependency list from
       # `pyproject.toml`.
@@ -87,13 +93,14 @@ jobs:
             --cov-report=html:coverage/html/${PYTHON_TAG} \
             --cov-report=xml:coverage/xml/report.${PYTHON_TAG}.xml \
             --junitxml=pytest/report.${PYTHON_TAG}.xml
-      - name: Upload PyTest report for Python ${{ matrix.python-version }}
-        uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
         with:
           name: pytest-report-${{ matrix.python-version }}
           path: |
             coverage
             pytest
+
       # This step never fails but it is useful to monitor status of type
       # corectness.
       - name: Check typing
