@@ -59,11 +59,12 @@ jobs:
 
       - name: Install Typst binary
         env:
-          TYPST_RELEASE: https://github.com/typst/typst/releases/download
+          TYPST_RELEASE: 'https://github.com/typst/typst/releases/download'
+          TYPST_VERSION: '0.12.0'
         run: |
           mkdir -p "$HOME/.cache/typst"
           cd "$HOME/.cache/typst"
-          wget "$TYPST_RELEASE/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz"
+          wget "$TYPST_RELEASE/v$TYPST_VERSION/typst-x86_64-unknown-linux-musl.tar.xz"
           tar xf typst-x86_64-unknown-linux-musl.tar.xz
           install -Dm 755 -t "$HOME/.local/bin" typst-x86_64-unknown-linux-musl/typst
           rm -rfv typst-x86_64-unknown-linux-musl.tar.xz
