@@ -82,3 +82,22 @@ class TestTypstRenderer:
         img = Image.open(data_dir / 'draw_path.png')
         expected = np.asarray(img)
         assert_array_equal(actual, expected)
+
+    def test_draw_image(self):
+        img = Image.open(data_dir / 'lenna.png')
+
+        def render():
+            fig, ax = plt.subplots(figsize=(512 / 72,) * 2, dpi=72)
+            plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            ax.axis('off')
+            ax.imshow(img)
+            buf = BytesIO()
+            fig.savefig(buf, dpi=72, format='png')
+            plt.close(fig)
+            buf.seek(0)
+            return Image.open(buf)
+
+        with rc_context():
+            actual = render()
+        desired = render()
+        assert_array_equal(actual, desired)
