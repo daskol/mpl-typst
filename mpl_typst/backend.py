@@ -4,11 +4,13 @@ import itertools
 import pathlib
 import re
 import subprocess
+from codecs import getwriter
 from datetime import date, datetime
-from io import BytesIO, StringIO
+from io import BytesIO
+from os import PathLike
 from shutil import copyfileobj, move
 from tempfile import TemporaryDirectory
-from typing import Any, Literal, Optional, Self, TextIO, Type
+from typing import IO, Any, Literal, Optional, Self, Type
 
 import numpy as np
 from matplotlib import get_cachedir
@@ -65,21 +67,16 @@ class TypstRenderingError(RuntimeError):
 class TypstRenderer(RendererBase):
     """Typst renderer handles drawing/rendering operations."""
 
-    def __init__(self, figure: Figure, fout: TextIO,
-                 config: Config | None = None, metadata: dict[str, str] = {},
-                 image_dpi=72, basename=None):
+    def __init__(self, figure: Figure, fout: IO[str],
+                 config: Config | None = None, path: PathLike | None = None,
+                 metadata: dict[str, str] = {}, image_dpi=72):
         super().__init__()
         self.config: Config = config or Config()
         self.figure = figure
         self.fout = fout
+        self.path = pathlib.Path(path)
         self.image_dpi = image_dpi
         self.metadata = metadata
-
-        if basename is None:
-            basename = getattr(fout, 'name', '')
-            if not isinstance(basename, str):
-                basename = ''
-        self.basename = basename
 
         self.width = self.figure.get_figwidth()
         self.height = self.figure.get_figheight()
@@ -150,33 +147,27 @@ class TypstRenderer(RendererBase):
 
     def draw_image(self, gc: GraphicsContextBase, x: float, y: float,
                    im: ArrayLike, transform: Affine2DBase | None = None):
-        # This methods closely follows the SVG backend
-
         h, w = im.shape[:2]
-
         if w == 0 or h == 0:
             return
-
-        # TODO Clips as soon as Typst supports them
-        # TODO Links, Transforms (except translate)
-
-        data = ''
-
-        img = ImageOps.flip(Image.fromarray(im))
-
+        # TODO(@joneuhauser): Clips as soon as Typst supports them.
+        # TODO(@joneuhauser): Links, Transforms (except translate).
         if transform is None:
             w = w / self.image_dpi
             h = h / self.image_dpi
 
+        # TODO(@daskol): Do not flip ourselves. Let Typst flip it for us!
+        img = ImageOps.flip(Image.fromarray(im))
+
         if self.config.detached_images:
             if self.basename is None:
-                raise ValueError('Cannot save image data to filesystem when '
-                                 'writing SVG to an in-memory buffer')
-            filename = pathlib.Path(self.basename).with_suffix(
-                f'.image{next(self._image_counter)}.png')
-            img.save(filename)
-            data = filename
-            image = Call('image', f'"{filename.name}"',
+                raise ValueError(
+                    'Cannot save raster image files to filesystem since '
+                    'target directory is not specified.')
+            image_ext = f'.image{next(self._image_counter)}.png'
+            image_path = self.path.with_suffix(image_ext)
+            img.save(image_path)
+            image = Call('image', f'"{image_path.name}"',
                          width=Scalar(w, 'in'), height=Scalar(h, 'in'))
         else:
             buf = BytesIO()
@@ -424,31 +415,30 @@ class TypstFigureCanvas(FigureCanvasBase):
     def print_typ(self, filename, *, bbox_inches_restore=None, metadata=None,
                   **kwargs):
         config = Config.from_dict(kwargs, drop=True, prefix='typst_')
-
-        # TODO(@daskol): Matplotlib shows quite unexpectedbehaviour. It renders
-        # the same figure multiple types with randering to temporary buffer
-        # (BytesIO) rather than directly to file. So, it would be great to
-        # rewrite this function and neighnoring one to make it file-agnostic.
-        def _render_to_stream(buf):
-            width, height = self.figure.get_size_inches()
-            dpi = self.figure.dpi
-            self.figure.dpi = 72
-            with TypstRenderer(self.figure, buf, config, metadata or {},
-                               image_dpi=dpi) as tr:
-                renderer = MixedModeRenderer(self.figure, width, height,
-                                             dpi, tr,
-                    bbox_inches_restore=bbox_inches_restore)
-
-                self.figure.draw(renderer)
-
+        kwargs['bbox_inches_restore'] = bbox_inches_restore
+        kwargs['metadata'] = metadata
+        # Matplotlib shows quite unexpected behaviour. It renders the same
+        # figure multiple types with rendering to temporary buffer (BytesIO)
+        # rather than directly to file. So, we make rendering file-agnostic,
+        # meaning that filename is an optional.
         if isinstance(filename, BytesIO):
-            buffer = codecs.getwriter('utf-8')(filename)
-            metadata = metadata or {}
-            with TypstRenderer(self.figure, buffer, metadata) as renderer:
-                self.figure.draw(renderer)
+            writer = getwriter('utf-8')(filename)
+            self._print_typ(writer, config, **kwargs)
         else:
             with open(filename, 'w') as fout:
-                _render_to_stream(fout)
+                self._print_typ(fout, config, pathlib.Path(filename), **kwargs)
+
+    def _print_typ(self, buf: IO[str], config: Config,
+                   path: pathlib.Path | None = None, /, metadata=None,
+                   bbox_inches_restore=None, **kwargs):
+        width, height = self.figure.get_size_inches()
+        dpi = self.figure.dpi
+        self.figure.dpi = 72
+        with TypstRenderer(self.figure, buf, config, path, metadata or {},
+                           image_dpi=dpi) as tr:
+            mmr = MixedModeRenderer(self.figure, width, height, dpi, tr,
+                                    bbox_inches_restore=bbox_inches_restore)
+            self.figure.draw(mmr)
 
     def _print_as(self, fmt, filename, *, metadata=None, **kwargs):
         # Set up default metadata. We use metadata as a condition for setting
