@@ -10,7 +10,6 @@ from shutil import copyfileobj, move
 from tempfile import TemporaryDirectory
 from typing import Any, Literal, Optional, Self, TextIO, Type
 
-import matplotlib
 import numpy as np
 from matplotlib import get_cachedir
 from matplotlib.backend_bases import (
@@ -26,7 +25,7 @@ from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 from PIL import Image, ImageOps
 
-from mpl_typst.config import compiler
+from mpl_typst.config import Config, compiler
 from mpl_typst.typst import (
     Array, Block, Call, Content, Dictionary, Scalar, Writer as TypstWriter)
 
@@ -67,8 +66,10 @@ class TypstRenderer(RendererBase):
     """Typst renderer handles drawing/rendering operations."""
 
     def __init__(self, figure: Figure, fout: TextIO,
-                 metadata: dict[str, str] = {}, image_dpi=72, basename=None):
+                 config: Config | None = None, metadata: dict[str, str] = {},
+                 image_dpi=72, basename=None):
         super().__init__()
+        self.config: Config = config or Config()
         self.figure = figure
         self.fout = fout
         self.image_dpi = image_dpi
@@ -95,8 +96,7 @@ class TypstRenderer(RendererBase):
         with open(PROLOGUE) as fin:
             template = fin.read()
             text = template.replace('{{ date }}', self.timestamp.isoformat())
-            text = text.replace('{{ preamble }}',
-                                matplotlib.rcParams['pgf.preamble'])
+            text = text.replace('{{ preamble }}', self.config.preamble)
         self.fout.write(text)
         self.fout.write('\n')
 
@@ -168,14 +168,7 @@ class TypstRenderer(RendererBase):
             w = w / self.image_dpi
             h = h / self.image_dpi
 
-        if matplotlib.rcParams['svg.image_inline']:
-            buf = BytesIO()
-            img.save(buf, format='png')
-            data = '"' + base64.b64encode(buf.getvalue()).decode('ascii') + '"'
-            image = Call('image.decode', Call('base64.decode', data),
-                         format='"png"', width=Scalar(w, 'in'),
-                         height=Scalar(h, 'in'))
-        else:
+        if self.config.detached_images:
             if self.basename is None:
                 raise ValueError('Cannot save image data to filesystem when '
                                  'writing SVG to an in-memory buffer')
@@ -185,6 +178,13 @@ class TypstRenderer(RendererBase):
             data = filename
             image = Call('image', f'"{filename.name}"',
                          width=Scalar(w, 'in'), height=Scalar(h, 'in'))
+        else:
+            buf = BytesIO()
+            img.save(buf, format='png')
+            data = '"' + base64.b64encode(buf.getvalue()).decode('utf-8') + '"'
+            image = Call('image.decode', Call('base64.decode', data),
+                         format='"png"', width=Scalar(w, 'in'),
+                         height=Scalar(h, 'in'))
 
         place = Call('place', image, dx=Scalar(x / self.dpi, 'in'),
                      dy=Scalar(self.height - y / self.dpi - h, 'in'))
@@ -423,6 +423,8 @@ class TypstFigureCanvas(FigureCanvasBase):
 
     def print_typ(self, filename, *, bbox_inches_restore=None, metadata=None,
                   **kwargs):
+        config = Config.from_dict(kwargs, drop=True, prefix='typst_')
+
         # TODO(@daskol): Matplotlib shows quite unexpectedbehaviour. It renders
         # the same figure multiple types with randering to temporary buffer
         # (BytesIO) rather than directly to file. So, it would be great to
@@ -431,7 +433,7 @@ class TypstFigureCanvas(FigureCanvasBase):
             width, height = self.figure.get_size_inches()
             dpi = self.figure.dpi
             self.figure.dpi = 72
-            with TypstRenderer(self.figure, buf, metadata or {},
+            with TypstRenderer(self.figure, buf, config, metadata or {},
                                image_dpi=dpi) as tr:
                 renderer = MixedModeRenderer(self.figure, width, height,
                                              dpi, tr,

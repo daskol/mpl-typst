@@ -5,9 +5,9 @@
  * Timestamp: {{ date }}.
  */
 
-{{ preamble }}
-
 #import "@preview/based:0.1.0": base64
+
+{{ preamble }}
 
 #let draw-text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, body) = context {
   // In order to align a text properly, we need to configure bounding box of a

@@ -37,10 +37,11 @@ import matplotlib as mpl
 from mpl_typst.backend import (
     FigureCanvas, FigureManager, TypstFigureCanvas, TypstFigureManager,
     TypstGraphicsContext, TypstRenderer, TypstRenderingError)
+from mpl_typst.config import Config
 
-__all__ = ('BACKEND', 'FigureCanvas', 'FigureManager', 'TypstFigureCanvas',
-           'TypstFigureManager', 'TypstGraphicsContext', 'TypstRenderer',
-           'TypstRenderingError', 'rc_context', 'use')
+__all__ = ('BACKEND', 'Config', 'FigureCanvas', 'FigureManager',
+           'TypstFigureCanvas', 'TypstFigureManager', 'TypstGraphicsContext',
+           'TypstRenderer', 'TypstRenderingError', 'rc_context', 'use')
 
 # Backend specification for use with `matplotlib.use`
 BACKEND = 'module://mpl_typst'
