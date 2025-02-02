@@ -74,9 +74,13 @@ class TypstRenderer(RendererBase):
         self.config: Config = config or Config()
         self.figure = figure
         self.fout = fout
-        self.path = pathlib.Path(path)
         self.image_dpi = image_dpi
         self.metadata = metadata
+
+        if path is None:
+            self.path = None
+        else:
+            self.path = pathlib.Path(path)
 
         self.width = self.figure.get_figwidth()
         self.height = self.figure.get_figheight()
@@ -141,9 +145,11 @@ class TypstRenderer(RendererBase):
                     height=Scalar(self.height, 'in'))
         expr.to_string(self.writer)
 
-    def draw_gouraud_triangles(self, gc, triangles_array, colors_array,
-                               transform):
-        pass
+    def get_image_magnification(self) -> float:
+        return 1
+
+    def option_scale_image(self) -> bool:
+        return True
 
     def draw_image(self, gc: GraphicsContextBase, x: float, y: float,
                    im: ArrayLike, transform: Affine2DBase | None = None):
@@ -354,7 +360,7 @@ class TypstRenderer(RendererBase):
         return True
 
     def get_canvas_width_height(self) -> tuple[float, float]:
-        return self.width, self.height
+        return 1, 1
 
     def get_text_width_height_descent(
             self, s: str, prop: FontProperties,
@@ -432,8 +438,8 @@ class TypstFigureCanvas(FigureCanvasBase):
                    path: pathlib.Path | None = None, /, metadata=None,
                    bbox_inches_restore=None, **kwargs):
         width, height = self.figure.get_size_inches()
-        dpi = self.figure.dpi
         self.figure.dpi = 72
+        dpi = self.figure.dpi
         with TypstRenderer(self.figure, buf, config, path, metadata or {},
                            image_dpi=dpi) as tr:
             mmr = MixedModeRenderer(self.figure, width, height, dpi, tr,
