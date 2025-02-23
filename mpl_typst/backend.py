@@ -21,6 +21,7 @@ from matplotlib.transforms import Affine2DBase, Transform
 from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 
+from mpl_typst.config import compiler
 from mpl_typst.typst import (
     Array, Block, Call, Content, Dictionary, Scalar, Writer as TypstWriter)
 
@@ -393,9 +394,11 @@ class TypstFigureCanvas(FigureCanvasBase):
             # Render typst markup running typst binary.
             out_path = inp_path.with_suffix(f'.{fmt}')
             dpi = kwargs.get('dpi', self.figure.dpi)
-            cmd = ['typst', 'compile', f'--root={tmpdir}', f'--format={fmt}',
-                   '--diagnostic-format=short', f'--ppi={dpi}',
-                   str(inp_path), str(out_path)]
+            cmd = [
+                str(compiler), 'compile', f'--root={tmpdir}',
+                f'--format={fmt}', '--diagnostic-format=short', f'--ppi={dpi}',
+                str(inp_path), str(out_path)
+            ]
             proc = subprocess.run(cmd, capture_output=True, cwd=tmpdir)
             if proc.returncode:
                 kwargs = {'stdout': proc.stdout.decode('utf-8'),
