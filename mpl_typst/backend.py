@@ -175,64 +175,38 @@ class TypstRenderer(RendererBase):
             else:
                 stroke.kwargs.update({'dash': bounds})
 
-        # The path in node form, that is [[[[in_handle, node, out_handle] ...],
-        # True], [[subpath2, closed]]].
-        superpath = [[[], False]]
-        current_subpath = superpath[-1][0]
+        # Since Typst v0.13.0, path drawing API (aka curve) is more coherent to
+        # Matplotlib's Path object.
+        subpath: list[Call]
+        superpath: list[list[Call]] = []
         for points, code in path.iter_segments(transform):
-
             points = normalize(points)
-
+            scalars = tuple([Scalar(p, 'in') for p in points])
             match code:
                 case Path.STOP:
-                    pass
-                case Path.MOVETO | Path.LINETO:
-                    if code == Path.MOVETO:
-                        superpath.append([[], False])
-                        current_subpath = superpath[-1][0]
-                    p = complex(*points)
-                    current_subpath.append([p, p, p])
-                case Path.CURVE3 | Path.CURVE4:
-                    if code == Path.CURVE3:
-                        qp1, qp2 = complex(*points[:2]), complex(*points[2:])
-                        # Convert quadratic to cubic bezier
-                        qp0 = current_subpath[-1][1]
-                        cp1 = qp0 + 2 / 3 * (qp1 - qp0)
-                        cp2 = qp2 + 2 / 3 * (qp1 - qp2)
-                        cp3 = qp2
-                    else:
-                        cp1 = complex(*points[:2])
-                        cp2 = complex(*points[2:4])
-                        cp3 = complex(*points[4:6])
-                    current_subpath[-1][-1] = cp1
-                    current_subpath.append([cp2, cp3, cp3])
+                    raise NotImplementedError('It was previously ignored.')
+                case Path.LINETO:
+                    op = Call('curve.line', Array(scalars))
+                case Path.MOVETO:
+                    # NOTE There is no STOP opcode in Typst thus we should
+                    # manually create subpaths.
+                    subpath = []
+                    superpath += [subpath]
+                    op = Call('curve.move', Array(scalars))
+                case Path.CURVE3:
+                    qp1, qp2 = Array(scalars[:2]), Array(scalars[2:])
+                    op = Call('curve.quad', qp1, qp2)
+                case Path.CURVE4:
+                    cp1 = Array(scalars[:2])
+                    cp2 = Array(scalars[2:4])
+                    cp3 = Array(scalars[4:6])
+                    op = Call('curve.cubic', cp1, cp2, cp3)
                 case Path.CLOSEPOLY:
-                    end = current_subpath[0][1]
-                    superpath[-1][1] = True
-                    superpath.append([[], False])
-                    current_subpath = superpath[-1][0]
-                    current_subpath.append([end, end, end])
+                    op = Call('curve.close', mode='"straight"')
+            subpath += [op]
 
-        def node2array(node: complex) -> Array:
-            return Array([Scalar(node.real, 'in'), Scalar(node.imag, 'in')])
-
-        for subpath, closed in superpath:
-            if len(subpath) < 2:
-                continue  # Empty subpath.
-            # Construct a `path` routine invokation.
-            line = Call('path', fill=fill, stroke=stroke)
-            if closed:
-                line.kwargs.update({'closed': True})
-
-            for node in subpath:
-                if node[0] == node[1] == node[2]:
-                    line.args.append(node2array(node[0]))
-                else:
-                    args = node[1], node[0] - node[1], node[2] - node[1]
-                    line.args.append(Array([node2array(arg) for arg in args]))
-
-            # Place a line path relative to parent block element without
-            # layouting.
+        for subpath in superpath:
+            line = Call('curve', *subpath, fill=fill, stroke=stroke)
             place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
             self.main.append(place)
 
