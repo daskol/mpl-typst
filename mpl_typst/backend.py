@@ -438,8 +438,7 @@ class TypstFigureCanvas(FigureCanvasBase):
                    path: pathlib.Path | None = None, /, metadata=None,
                    bbox_inches_restore=None, **kwargs):
         width, height = self.figure.get_size_inches()
-        self.figure.dpi = 72
-        dpi = self.figure.dpi
+        dpi = self.figure.dpi  # NOTE Do not enforce DPI!
         with TypstRenderer(self.figure, buf, config, path, metadata or {},
                            image_dpi=dpi) as tr:
             mmr = MixedModeRenderer(self.figure, width, height, dpi, tr,
