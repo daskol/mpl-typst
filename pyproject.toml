@@ -3,14 +3,14 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "typst-mpl-backend"
+name = "mpl-typst"
 description = "Typst backend for matplotlib (Python visualization library)."
 license = {text = "MIT"}
 authors = [
     {name = "Daniel Bershatsky", email = "daniel.bershatsky@gmail.com"},
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
-version = "0.1.0"
+version = "0.2.0"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Other Environment",
@@ -41,8 +41,9 @@ dev = ["isort", "pytest>=8", "ruff"]
 test = ["pillow", "numpy"]
 
 [project.urls]
-Homepage = "https://github.com/daskol/typst-mpl-backend"
-Repository = "https://github.com/daskol/typst-mpl-backend.git"
+Homepage = "https://github.com/daskol/mpl-typst"
+Repository = "https://github.com/daskol/mpl-typst"
+Issues = "https://github.com/daskol/mpl-typst/issues"
 
 [tool.isort]
 combine_as_imports = true
@@ -93,10 +94,13 @@ max-doc-length = 79
 max-line-length = 79
 
 [tool.setuptools]
+include-package-data = false  # Default is true.
 zip-safe = true
 
 [tool.setuptools.packages.find]
 include = ["mpl_typst*"]
+exclude = ["mpl_typst.*_test"]  # Does not work actually.
+namespaces = false
 
 [tool.setuptools.package-data]
 mpl_typst = ["*.typ"]
