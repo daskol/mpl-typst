@@ -14,6 +14,15 @@ from mpl_typst import rc_context
 data_dir = pathlib.Path(__file__).parent / 'testdata'
 
 
+def to_array(fig: Image, dpi: int = 144, **kwargs) -> np.ndarray:
+    buf = BytesIO()
+    fig.savefig(buf, dpi=dpi, format='png', **kwargs)
+    plt.close(fig)
+    buf.seek(0)
+    img = Image.open(buf)
+    return np.asarray(img)
+
+
 class TestTypstRenderer:
 
     def test_draw_path(self):
@@ -67,13 +76,7 @@ class TestTypstRenderer:
             ax.add_patch(patch)
             ax.set_xlim(-2, 6)
             ax.set_ylim(-2, 6)
-
-            buf = BytesIO()
-            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
-            buf.seek(0)
-
-            img = Image.open(buf)
-            return np.asarray(img)
+            return to_array(fig, dpi=100, bbox_inches='tight', pad_inches=0)
 
         # Use `mpl_typst` renderer.
         with rc_context():
@@ -83,6 +86,52 @@ class TestTypstRenderer:
         img = Image.open(data_dir / 'draw_path.png')
         expected = np.asarray(img)
         assert_array_equal(actual, expected)
+
+    @pytest.mark.parametrize('dpi', [72, 100, 144])
+    def test_draw_image_lenna(self, dpi: int):
+        img = Image.open(data_dir / 'lenna.png')
+
+        def render():
+            fig, ax = plt.subplots(figsize=(512 / 72,) * 2, dpi=72)
+            plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            ax.axis('off')
+            ax.imshow(img)
+            return to_array(fig, dpi)
+
+        with rc_context():
+            actual = render()
+        desired = render()
+
+        # Compare Lenna rerendered with `matplotlib` and `mpl-typst`.
+        assert_array_equal(actual, desired)
+
+    @pytest.mark.parametrize('dpi', [72, 100, 144])
+    def test_draw_image_spy(self, dpi: int):
+        rng = np.random.default_rng(42)
+        xs = rng.integers(0, 2, size=(8, 16))
+
+        def render():
+            fig, ax = plt.subplots(figsize=(3, 2))
+            ax.spy(xs)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            return to_array(fig, dpi)
+
+        with rc_context():
+            actual = render()
+        desired = render()
+
+        # Compare with `matplotlib` rendering.
+        ix, *_ = np.nonzero(actual - desired)
+        nnz = len(ix)
+        total = np.prod(actual.shape)
+        expected = {72: 2, 100: 4, 144: 1}[dpi]
+        assert (ratio := 100 * nnz / total) < expected, \
+            f'Number of mismatched pixels exceed {expected}%: {ratio:.2f}%.'
+
+        # Compare with the previous renderings.
+        reference = Image.open(data_dir / f'spy{dpi:03d}.png')
+        assert_array_equal(actual, reference)
 
 
 class TestTypstFigureCanvas:
