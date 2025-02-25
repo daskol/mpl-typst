@@ -6,12 +6,11 @@ from sys import version_info
 from typing import IO, Any
 
 if version_info >= (3, 11):
+    from tomllib import load as load_toml
+    from typing import Self
+else:
     from tomli import load as load_toml
     from typing_extensions import Self
-else:
-    from typing import Self
-
-    from toml import load as load_toml
 
 PREFIX = 'MPL_TYPST_'
 
