@@ -33,7 +33,14 @@ classifiers = [
     "Topic :: Utilities",
     "Typing :: Typed",
 ]
-dependencies = ["matplotlib", "numpy"]
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.21",
+    "numpy>=1.21.2; python_version>='3.10'",
+    "numpy>=1.23.3; python_version>='3.11'",
+    "numpy>=1.26.0; python_version>='3.12'",
+    "numpy>=2.1.0; python_version>='3.13'",
+]
 requires-python = ">=3.11,<4"
 
 [project.optional-dependencies]
