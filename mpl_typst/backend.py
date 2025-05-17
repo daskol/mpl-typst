@@ -11,6 +11,7 @@ from shutil import copyfileobj, move
 from tempfile import TemporaryDirectory
 from typing import IO, Any, Literal, Optional, Self, Type
 
+import matplotlib as mpl
 import numpy as np
 from matplotlib import get_cachedir
 from matplotlib.backend_bases import (
@@ -22,9 +23,19 @@ from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
 from matplotlib.text import Text
 from matplotlib.transforms import Affine2DBase, Transform
-from matplotlib.typing import ColorType
 from numpy.typing import ArrayLike
 from PIL import Image, ImageOps
+
+# Module `matplotlib.typing` has been introduced in matplotlib@3.8 but the
+# latest Ubuntu LTS 24.04 provides matplotlib@3.6. Since we are not ready to
+# abandont typing hints and support of the most popular distros is desirable,
+# we keep this version check until Ubuntu LTS 26.04.
+#
+# https://github.com/daskol/mpl-typst/issues/24
+if mpl.__version_info__ >= (3, 8):
+    from matplotlib.typing import ColorType
+else:
+    ColorType = Any
 
 from mpl_typst.config import Config, compiler
 from mpl_typst.typst import (
