@@ -536,6 +536,8 @@ class TypstRenderer(RendererBase):
             alignment = f'{halign} + {valign}'
             fontsize = mtext.get_fontsize()
             angle = mtext.get_rotation()
+            rgbText = tuple(gc.get_rgb())[:3]
+            tcolor = Call('rgb', *[Scalar(c * 100, '%') for c in rgbText])
         else:
             x = x / self.figure.dpi
             y = self.height + y / self.figure.dpi
@@ -547,7 +549,8 @@ class TypstRenderer(RendererBase):
                     size=Scalar(fontsize, 'pt'),
                     alignment=alignment,
                     baseline=baseline,
-                    angle=Scalar(360 - angle, 'deg'))
+                    angle=Scalar(360 - angle, 'deg'),
+                    tcolor=tcolor)
         self.main.append(elem)
 
     def flipy(self):

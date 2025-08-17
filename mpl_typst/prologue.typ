@@ -9,7 +9,7 @@
 
 {{ preamble }}
 
-#let draw-text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, body) = context {
+#let draw-text(dx: 0pt, dy: 0pt, size: 10pt, alignment: center + horizon, baseline: false, angle: 0deg, tcolor: black, body) = context {
   // In order to align a text properly, we need to configure bounding box of a
   // text.
   let top-edge = "cap-height"
@@ -23,7 +23,7 @@
   }
 
   // Measure shape of text block.
-  let content = text(size: size, top-edge: top-edge, bottom-edge: bot-edge, body)
+  let content = text(size: size, top-edge: top-edge, bottom-edge: bot-edge, fill: tcolor, body)
   let shape = measure(content)
 
   // Adjust horizontal position.
