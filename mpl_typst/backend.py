@@ -214,7 +214,7 @@ class TypstRenderer(RendererBase):
 
         place = Call('place', image, dx=Scalar(x / self.dpi, 'in'),
                      dy=Scalar(self.height - y / self.dpi - h, 'in'))
-        self._append(gc, place)
+        self.main.append(place)
 
     def draw_path(self, gc: GraphicsContextBase, path: Path,
                   transform: Transform, rgbFace: ColorType | None = None):
@@ -382,7 +382,7 @@ class TypstRenderer(RendererBase):
                     alignment=alignment,
                     baseline=baseline,
                     angle=Scalar(360 - angle, 'deg'))
-        self._append(gc, elem)
+        self.main.append(elem)
 
     def flipy(self):
         """Axis Oy points to bottom."""
