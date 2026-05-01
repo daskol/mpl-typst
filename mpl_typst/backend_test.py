@@ -158,3 +158,15 @@ class TestTypstFigureCanvas:
             assert filename.stat().st_size > 0
         else:
             raise RuntimeError(f'Unexpected test parameter: how={how}.')
+
+    def test_print_typ_clip_rectangle(self):
+        fig, ax = plt.subplots(figsize=(2, 2))
+        ax.plot([0, 1], [0, 1], linewidth=40)
+
+        buffer = BytesIO()
+        with rc_context():
+            fig.savefig(buffer, format='typ')
+
+        text = buffer.getvalue().decode()
+        assert 'box(' in text
+        assert 'clip: true' in text

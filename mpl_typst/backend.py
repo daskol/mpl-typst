@@ -102,6 +102,25 @@ class TypstRenderer(RendererBase):
         self.writer: Optional[TypstWriter] = None
         self.main: Optional[Block] = None
 
+    def _wrap_clip(self, gc: GraphicsContextBase, expr: Call) -> Call:
+        bbox = gc.get_clip_rectangle()
+        if bbox is None:
+            return expr
+
+        x = bbox.x0 / self.dpi
+        y = self.height - bbox.y1 / self.dpi
+        width = bbox.width / self.dpi
+        height = bbox.height / self.dpi
+
+        body = Block([Call('place', expr, dx=Scalar(-x, 'in'),
+                           dy=Scalar(-y, 'in'))])
+        box = Call('box', body, width=Scalar(width, 'in'),
+                   height=Scalar(height, 'in'), clip=True)
+        return Call('place', box, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+
+    def _append(self, gc: GraphicsContextBase, expr: Call):
+        self.main.append(self._wrap_clip(gc, expr))
+
     def __enter__(self) -> Self:
         # First of all, add some helpers for rendering at the beginning.
         with open(PROLOGUE) as fin:
@@ -195,7 +214,7 @@ class TypstRenderer(RendererBase):
 
         place = Call('place', image, dx=Scalar(x / self.dpi, 'in'),
                      dy=Scalar(self.height - y / self.dpi - h, 'in'))
-        self.main.append(place)
+        self._append(gc, place)
 
     def draw_path(self, gc: GraphicsContextBase, path: Path,
                   transform: Transform, rgbFace: ColorType | None = None):
@@ -274,7 +293,7 @@ class TypstRenderer(RendererBase):
         for subpath in superpath:
             line = Call('curve', *subpath, fill=fill, stroke=stroke)
             place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
-            self.main.append(place)
+            self._append(gc, place)
 
     def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight,
                        coordinates, offsets, offsetTrans, facecolors,
@@ -323,7 +342,7 @@ class TypstRenderer(RendererBase):
                 # Put on canvas with respect of the origin.
                 place = Call('place', line,
                              dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
-                self.main.append(place)
+                self._append(gc, place)
 
     def draw_text(self, gc: GraphicsContextBase, x: float, y: float, s: str,
                   prop: FontProperties, angle: float,
@@ -363,7 +382,7 @@ class TypstRenderer(RendererBase):
                     alignment=alignment,
                     baseline=baseline,
                     angle=Scalar(360 - angle, 'deg'))
-        self.main.append(elem)
+        self._append(gc, elem)
 
     def flipy(self):
         """Axis Oy points to bottom."""
