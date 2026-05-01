@@ -1,5 +1,5 @@
-import pathlib
 from io import BytesIO
+from pathlib import Path as FilePath
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,17 +10,7 @@ from numpy.testing import assert_array_equal
 from PIL import Image
 
 from mpl_typst import rc_context
-
-data_dir = pathlib.Path(__file__).parent / 'testdata'
-
-
-def to_array(fig, dpi: int = 144, **kwargs) -> np.ndarray:
-    buf = BytesIO()
-    fig.savefig(buf, dpi=dpi, format='png', **kwargs)
-    plt.close(fig)
-    buf.seek(0)
-    img = Image.open(buf)
-    return np.asarray(img)
+from mpl_typst.testing import data_dir, to_array
 
 
 def clipped_line_figure():
@@ -141,7 +131,7 @@ class TestTypstRenderer:
             plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
             ax.axis('off')
             ax.imshow(img)
-            return to_array(fig, dpi)
+            return to_array(fig, dpi, bbox_inches=fig.bbox_inches)
 
         with rc_context():
             actual = render()
@@ -160,7 +150,7 @@ class TestTypstRenderer:
             ax.spy(xs)
             ax.set_xticks([])
             ax.set_yticks([])
-            return to_array(fig, dpi)
+            return to_array(fig, dpi, bbox_inches=fig.bbox_inches)
 
         with rc_context():
             actual = render()
@@ -182,7 +172,7 @@ class TestTypstRenderer:
 class TestTypstFigureCanvas:
 
     @pytest.mark.parametrize('how', ['buffer', 'path', 'str'])
-    def test_print_typ(self, how: str, tmp_path: pathlib.Path):
+    def test_print_typ(self, how: str, tmp_path: FilePath):
         fig, ax = plt.subplots(1, 1)
         x = np.linspace(0.0, 2 * np.pi, 100)
         y = np.sin(x)
@@ -195,7 +185,7 @@ class TestTypstFigureCanvas:
             assert buffer.tell() > 0
         elif how in ('path', 'str'):
             filename = tmp_path / 'output.typ'
-            fname: str | pathlib.Path = filename
+            fname: str | FilePath = filename
             if how == 'str':
                 fname = str(fname)
             with rc_context():

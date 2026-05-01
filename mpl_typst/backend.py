@@ -5,13 +5,14 @@ import re
 import subprocess
 from codecs import getwriter
 from datetime import date, datetime
-from io import BytesIO
+from io import BytesIO, StringIO
 from os import PathLike
 from shutil import copyfileobj, move
 from tempfile import TemporaryDirectory
 from typing import IO, Any, Literal, Optional, Self, Type
 
 import matplotlib as mpl
+import matplotlib._tight_bbox as _tight_bbox
 import numpy as np
 from matplotlib import get_cachedir
 from matplotlib.backend_bases import (
@@ -22,7 +23,7 @@ from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.path import Path
 from matplotlib.text import Text
-from matplotlib.transforms import Affine2DBase, Transform
+from matplotlib.transforms import Affine2DBase, Bbox, Transform
 from numpy.typing import ArrayLike
 from PIL import Image, ImageOps
 
@@ -79,7 +80,8 @@ class TypstRenderer(RendererBase):
 
     def __init__(self, figure: Figure, fout: IO[str],
                  config: Config | None = None, path: PathLike | None = None,
-                 metadata: dict[str, str] = {}, image_dpi=72):
+                 metadata: dict[str, str] = {}, image_dpi=72, *,
+                 width: float | None = None, height: float | None = None):
         super().__init__()
         self.config: Config = config or Config()
         self.figure = figure
@@ -92,8 +94,9 @@ class TypstRenderer(RendererBase):
         else:
             self.path = pathlib.Path(path)
 
-        self.width = self.figure.get_figwidth()
-        self.height = self.figure.get_figheight()
+        self.width = width if width is not None else self.figure.get_figwidth()
+        self.height = (height if height is not None
+                       else self.figure.get_figheight())
         self.dpi = figure.dpi
         self.timestamp = datetime.now().replace(microsecond=0)
 
@@ -389,7 +392,7 @@ class TypstRenderer(RendererBase):
         return True
 
     def get_canvas_width_height(self) -> tuple[float, float]:
-        return 1, 1
+        return self.width * self.dpi, self.height * self.dpi
 
     def get_text_width_height_descent(
             self, s: str, prop: FontProperties,
@@ -401,7 +404,7 @@ class TypstRenderer(RendererBase):
         return TypstGraphicsContext()
 
     def points_to_pixels(self, points):
-        return points  # if backend doesn't have dpi, e.g., postscript or svg
+        return points * self.dpi / 72
 
 
 class TypstGraphicsContext(GraphicsContextBase):
@@ -463,16 +466,40 @@ class TypstFigureCanvas(FigureCanvasBase):
             with open(filename, 'w') as fout:
                 self._print_typ(fout, config, pathlib.Path(filename), **kwargs)
 
+    def _get_loose_bbox(self, config: Config) -> Bbox:
+        width, height = self.figure.bbox_inches.size
+        dpi = self.figure.dpi
+        renderer = TypstRenderer(
+            self.figure, StringIO(), config, image_dpi=dpi,
+            width=width, height=height)
+        with renderer._draw_disabled():
+            self.figure.draw(renderer)
+        tight = self.figure.get_tightbbox(renderer)
+        return Bbox.union([self.figure.bbox_inches, tight])
+
     def _print_typ(self, buf: IO[str], config: Config,
                    path: pathlib.Path | None = None, /, metadata=None,
                    bbox_inches_restore=None, **kwargs):
-        width, height = self.figure.get_size_inches()
-        dpi = self.figure.dpi  # NOTE Do not enforce DPI!
-        with TypstRenderer(self.figure, buf, config, path, metadata or {},
-                           image_dpi=dpi) as tr:
-            mmr = MixedModeRenderer(self.figure, width, height, dpi, tr,
-                                    bbox_inches_restore=bbox_inches_restore)
-            self.figure.draw(mmr)
+        restore_bbox = None
+        if bbox_inches_restore is None:
+            bbox_inches = self._get_loose_bbox(config)
+            if not np.allclose(
+                    bbox_inches.bounds, self.figure.bbox_inches.bounds):
+                restore_bbox = _tight_bbox.adjust_bbox(
+                    self.figure, bbox_inches, self.figure.canvas.fixed_dpi)
+
+        try:
+            width, height = self.figure.bbox_inches.size
+            dpi = self.figure.dpi  # NOTE Do not enforce DPI!
+            with TypstRenderer(self.figure, buf, config, path, metadata or {},
+                               dpi, width=width, height=height) as tr:
+                mmr = MixedModeRenderer(
+                    self.figure, width, height, dpi, tr,
+                    bbox_inches_restore=bbox_inches_restore)
+                self.figure.draw(mmr)
+        finally:
+            if restore_bbox is not None:
+                restore_bbox()
 
     def _print_as(self, fmt, filename, *, metadata=None, **kwargs):
         # Set up default metadata. We use metadata as a condition for setting
