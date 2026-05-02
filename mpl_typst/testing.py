@@ -9,8 +9,6 @@ from matplotlib.figure import Figure
 from numpy.testing import assert_array_equal
 from PIL import Image
 
-DATA_DIR = Path(__file__).parent / 'testdata'
-
 
 def render_reference(fig: Figure, *, dpi: int,
                      savefig_kwargs: Mapping[str, Any]) -> np.ndarray:

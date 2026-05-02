@@ -10,7 +10,7 @@ class TestIssue32(IssueRegression):
 
     @staticmethod
     def figure() -> Figure:
-        fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+        fig, ax = plt.subplots(figsize=(6, 4))
         labels = ['Data 1', 'Data 2', 'Data 3']
         colors = ['black', '#CC79A7', '#56B4E9']
         _counts, _bins, patches = ax.hist(
