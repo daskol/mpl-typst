@@ -28,14 +28,14 @@ jobs:
     runs-on: 'ubuntu-24.04'
     strategy:
       matrix:
-        python-version: ['3.12', '3.13']
+        python-version: ['3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Install Typst binary
         env:
           TYPST_RELEASE: 'https://github.com/typst/typst/releases/download'
-          TYPST_VERSION: '0.13.0'
+          TYPST_VERSION: '0.14.2'
         run: |
           mkdir -p "$HOME/.cache/typst"
           cd "$HOME/.cache/typst"

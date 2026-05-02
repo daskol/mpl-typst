@@ -71,7 +71,7 @@ plugins = ["numpy.typing.mypy_plugin"]
 [tool.pytest.ini_options]
 minversion = "8.2"
 addopts = "-ra -q -m 'not slow'"
-testpaths = ["mpl_typst"]
+testpaths = ["mpl_typst", "tests"]
 markers = [
     "slow: slow tests (deselect with '-m \"not slow\"')",
 ]

@@ -9,6 +9,9 @@
 ### Deprecated
 ### Removed
 ### Fixed
+
+- Fix embedded Typst rendering of hatched histogram bars.
+
 ### Security
 
 ## [0.2.1] - 2024-05-17
