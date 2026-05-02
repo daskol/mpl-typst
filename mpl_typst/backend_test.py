@@ -11,6 +11,7 @@ from numpy.testing import assert_array_equal
 from PIL import Image
 
 from mpl_typst import rc_context
+from mpl_typst.testing import assert_anchored_places
 
 data_dir = pathlib.Path(__file__).parent / 'testdata'
 
@@ -161,6 +162,17 @@ class TestTypstRenderer:
         assert 'curve.move' in text
         assert 'curve.line' in text
         assert 'thickness: 1.0pt' in text
+        assert_anchored_places(text)
+
+    def test_draw_path_clipped_box_markup(self):
+        buf = BytesIO()
+
+        with rc_context():
+            fig, _ = clipped_line_figure()
+            fig.savefig(buf, format='typ')
+
+        text = buf.getvalue().decode()
+        assert_anchored_places(text)
 
     @pytest.mark.parametrize('hatch', ['///', 'x/', '.'])
     def test_draw_path_hatched_rect_pixels(self, hatch: str):

@@ -87,3 +87,12 @@ function and adjust figure time.
   placement: top,
 ) <line-plot-simple>
 ```
+
+## Development Notes
+
+Generated Typst drawing elements use Matplotlib coordinates that have already
+been normalized to the page's top-left origin. For this reason, every generated
+Typst `place()` call must be explicitly anchored with `top + left`. Do not rely
+on Typst's default placement alignment; it depends on surrounding document
+context and can shift clipped drawing elements when a generated figure is
+included with `figure(kind: image)`.

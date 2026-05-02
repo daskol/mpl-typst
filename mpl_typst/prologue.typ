@@ -53,5 +53,5 @@
   }
 
   // Finaly, place a content block in calculated displacement.
-  place(dx: px, dy: py, content)
+  place(top + left, dx: px, dy: py, content)
 }

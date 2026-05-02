@@ -112,11 +112,12 @@ class TypstRenderer(RendererBase):
         width = bbox.width / self.dpi
         height = bbox.height / self.dpi
 
-        body = Block([Call('place', expr, dx=Scalar(-x, 'in'),
+        body = Block([Call('place', 'top + left', expr, dx=Scalar(-x, 'in'),
                            dy=Scalar(-y, 'in'))])
         box = Call('box', body, width=Scalar(width, 'in'),
                    height=Scalar(height, 'in'), clip=True)
-        return Call('place', box, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+        return Call('place', 'top + left', box,
+                    dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
 
     def _append(self, gc: GraphicsContextBase, expr: Call, *,
                 clip: bool = True):
@@ -220,7 +221,8 @@ class TypstRenderer(RendererBase):
 
         box = Call('box', body, clip=True,
                    width=Scalar(width, 'in'), height=Scalar(height, 'in'))
-        place = Call('place', box, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+        place = Call('place', 'top + left', box,
+                     dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
         self._append(gc, place, clip=clip)
 
     def _path_rect(self, path: Path, transform: Transform) \
@@ -339,7 +341,8 @@ class TypstRenderer(RendererBase):
                          format='"png"', width=Scalar(w, 'in'),
                          height=Scalar(h, 'in'))
 
-        place = Call('place', image, dx=Scalar(x / self.dpi, 'in'),
+        place = Call('place', 'top + left', image,
+                     dx=Scalar(x / self.dpi, 'in'),
                      dy=Scalar(self.height - y / self.dpi - h, 'in'))
         self.main.append(place)
 
@@ -395,14 +398,15 @@ class TypstRenderer(RendererBase):
                 face = Call('rect', fill=fill, stroke=None,
                             width=Scalar(width, 'in'),
                             height=Scalar(height, 'in'))
-                place = Call('place', face,
+                place = Call('place', 'top + left', face,
                              dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
                 self._append(gc, place, clip=needs_clip)
 
             self._hatch_rect(x, y, width, height, gc, clip=needs_clip)
             edge = Call('rect', fill=None, stroke=stroke,
                         width=Scalar(width, 'in'), height=Scalar(height, 'in'))
-            place = Call('place', edge, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+            place = Call('place', 'top + left', edge,
+                         dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
             self._append(gc, place, clip=needs_clip)
             return
 
@@ -416,7 +420,7 @@ class TypstRenderer(RendererBase):
                 shape = Call('rect', fill=fill, stroke=stroke,
                              width=Scalar(width, 'in'),
                              height=Scalar(height, 'in'))
-                place = Call('place', shape,
+                place = Call('place', 'top + left', shape,
                              dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
                 self._append(gc, place, clip=False)
                 return
@@ -453,7 +457,8 @@ class TypstRenderer(RendererBase):
 
         for subpath in superpath:
             line = Call('curve', *subpath, fill=fill, stroke=stroke)
-            place = Call('place', line, dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
+            place = Call('place', 'top + left', line,
+                         dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
             self._append(gc, place)
 
     def draw_quad_mesh(self, gc, master_transform, meshWidth, meshHeight,
@@ -501,7 +506,7 @@ class TypstRenderer(RendererBase):
                     line.args.append(point)
 
                 # Put on canvas with respect of the origin.
-                place = Call('place', line,
+                place = Call('place', 'top + left', line,
                              dx=Scalar(0, 'in'), dy=Scalar(0, 'in'))
                 self._append(gc, place)
 

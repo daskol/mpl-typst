@@ -1,3 +1,4 @@
+import re
 from inspect import getfile
 from io import BytesIO
 from pathlib import Path
@@ -9,6 +10,18 @@ import pytest
 from matplotlib.figure import Figure
 from numpy.testing import assert_array_equal
 from PIL import Image
+
+RE_PLACE = re.compile(r'place\(\s*')
+RE_PLACE_ANCHORED = re.compile(r'place\(\s*top\s*\+\s*left,\s*box\(')
+RE_TOP_LEFT = re.compile(r'top\s*\+\s*left\b')
+
+
+def assert_anchored_places(text: str):
+    """Verify placement invariant (top + left alignment)."""
+    assert re.search(RE_PLACE_ANCHORED, text)
+    for match in RE_PLACE.finditer(text):
+        assert RE_TOP_LEFT.match(text, match.end())
+
 
 flaky = pytest.mark.xfail(reason='flaky: pixel-to-pixel image comparison')
 
