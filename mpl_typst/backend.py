@@ -118,8 +118,35 @@ class TypstRenderer(RendererBase):
                    height=Scalar(height, 'in'), clip=True)
         return Call('place', box, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
 
-    def _append(self, gc: GraphicsContextBase, expr: Call):
-        self.main.append(self._wrap_clip(gc, expr))
+    def _append(self, gc: GraphicsContextBase, expr: Call, *,
+                clip: bool = True):
+        if clip:
+            expr = self._wrap_clip(gc, expr)
+        self.main.append(expr)
+
+    def _rect_inside_clip(self, gc: GraphicsContextBase, x: float, y: float,
+                          width: float, height: float) -> bool:
+        bbox = gc.get_clip_rectangle()
+        if bbox is None:
+            return True
+
+        clip_x = bbox.x0 / self.dpi
+        clip_y = self.height - bbox.y1 / self.dpi
+        clip_width = bbox.width / self.dpi
+        clip_height = bbox.height / self.dpi
+
+        # Use a scale-aware floating-point tolerance for comparisons only. This
+        # avoids treating roundoff as real clipping without changing geometry.
+        values = (x, y, x + width, y + height,
+                  clip_x, clip_y, clip_x + clip_width, clip_y + clip_height)
+        value_max = max(map(abs, values))
+        eps = 32 * np.finfo(float).eps * max(1.0, value_max)
+        return (
+            clip_x - eps <= x and
+            clip_y - eps <= y and
+            x + width <= clip_x + clip_width + eps and
+            y + height <= clip_y + clip_height + eps
+        )
 
     def _color(self, colour: ColorType) -> Call:
         return Call('rgb', *[Scalar(c * 100, '%') for c in colour])
@@ -167,12 +194,12 @@ class TypstRenderer(RendererBase):
         zero = Scalar(0, 'in')
         for subpath in superpath:
             curve = Call('curve', *subpath, fill=paint, stroke=stroke)
-            curve_abs = Call('place', curve, dx=zero, dy=zero)
+            curve_abs = Call('place', 'top + left', curve, dx=zero, dy=zero)
             curves.append(curve_abs)
         return curves
 
     def _hatch_rect(self, x: float, y: float, width: float, height: float,
-                    gc: GraphicsContextBase):
+                    gc: GraphicsContextBase, *, clip: bool = True):
         path = gc.get_hatch_path()
         if path is None or len(path.vertices) == 0:
             return
@@ -194,7 +221,7 @@ class TypstRenderer(RendererBase):
         box = Call('box', body, clip=True,
                    width=Scalar(width, 'in'), height=Scalar(height, 'in'))
         place = Call('place', box, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
-        self._append(gc, place)
+        self._append(gc, place, clip=clip)
 
     def _path_rect(self, path: Path, transform: Transform) \
             -> tuple[float, float, float, float] | None:
@@ -360,22 +387,39 @@ class TypstRenderer(RendererBase):
             else:
                 stroke.kwargs.update({'dash': bounds})
 
-        if gc.get_hatch() and (rect := self._path_rect(path, transform)):
+        rect = self._path_rect(path, transform)
+        if gc.get_hatch() and rect:
             x, y, width, height = rect
+            needs_clip = not self._rect_inside_clip(gc, x, y, width, height)
             if fill is not None:
                 face = Call('rect', fill=fill, stroke=None,
                             width=Scalar(width, 'in'),
                             height=Scalar(height, 'in'))
                 place = Call('place', face,
                              dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
-                self._append(gc, place)
+                self._append(gc, place, clip=needs_clip)
 
-            self._hatch_rect(x, y, width, height, gc)
+            self._hatch_rect(x, y, width, height, gc, clip=needs_clip)
             edge = Call('rect', fill=None, stroke=stroke,
                         width=Scalar(width, 'in'), height=Scalar(height, 'in'))
             place = Call('place', edge, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
-            self._append(gc, place)
+            self._append(gc, place, clip=needs_clip)
             return
+
+        # Plain rectangles can be emitted as Typst rects when clipping would
+        # not affect them. Hatched rectangles stay in the branch above because
+        # each bar needs its own clipped hatch box.
+        if rect:
+            x, y, width, height = rect
+            needs_clip = not self._rect_inside_clip(gc, x, y, width, height)
+            if not needs_clip:
+                shape = Call('rect', fill=fill, stroke=stroke,
+                             width=Scalar(width, 'in'),
+                             height=Scalar(height, 'in'))
+                place = Call('place', shape,
+                             dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+                self._append(gc, place, clip=False)
+                return
 
         # Since Typst v0.13.0, path drawing API (aka curve) is more coherent to
         # Matplotlib's Path object.
