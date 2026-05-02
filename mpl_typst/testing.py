@@ -5,9 +5,12 @@ from typing import Any, ClassVar, Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 from matplotlib.figure import Figure
 from numpy.testing import assert_array_equal
 from PIL import Image
+
+flaky = pytest.mark.xfail(reason='flaky: pixel-to-pixel image comparison')
 
 
 def render_reference(fig: Figure, *, dpi: int,

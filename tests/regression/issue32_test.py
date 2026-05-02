@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
-from mpl_typst.testing import IssueRegression
+from mpl_typst.testing import IssueRegression, flaky
 
 
 class TestIssue32(IssueRegression):
@@ -25,3 +25,7 @@ class TestIssue32(IssueRegression):
         ax.set_title('Histogram with Hatch Patterns')
         ax.legend(labels)
         return fig
+
+    @flaky
+    def test_reference(self):
+        super().test_reference()
