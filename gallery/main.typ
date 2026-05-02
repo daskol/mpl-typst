@@ -12,12 +12,8 @@
 )
 
 #set par(justify: true, leading: 0.58em)
-#set text(font: "Times", size: 10pt)
+#set text(font: "Times New Roman", size: 10pt)
 #show: it => columns(2, gutter: 0.25in, it)
-
-#lorem(50)
-
-#lorem(50)
 
 #lorem(50)
 
@@ -37,6 +33,18 @@
   caption: [Simple line plot],
   placement: top,
 ) <line-plot-simple>
+
+#figure(
+  include "hist-hatched.typ",
+  kind: image,
+  caption: [Hatched histogram.],
+  placement: bottom,
+  scope: "parent",
+) <hist-hatched>
+
+#lorem(50)
+
+#lorem(50)
 
 #lorem(50)
 
