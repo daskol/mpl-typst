@@ -4,7 +4,8 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.patches import PathPatch
+from matplotlib.figure import Figure
+from matplotlib.patches import PathPatch, Rectangle
 from matplotlib.path import Path
 from numpy.testing import assert_array_equal
 from PIL import Image
@@ -32,6 +33,21 @@ def clipped_line_figure():
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     return fig, ax
+
+
+def rect_figure(hatch=None) -> Figure:
+    rect = Rectangle(
+        (0.15, 0.15), 0.7, 0.7,
+        facecolor='white', edgecolor='black', hatch=hatch, linewidth=1.0)
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=100)
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    ax.set_axis_off()
+    ax.set_aspect('equal')
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.add_patch(rect)
+    return fig
 
 
 class TestTypstRenderer:
@@ -130,6 +146,46 @@ class TestTypstRenderer:
             actual = to_array(fig, dpi=100)
 
         expected = Image.open(data_dir / 'draw_path_bbox.png')
+        assert_array_equal(actual, expected)
+
+    def test_draw_path_hatched_rect_markup(self):
+        buf = BytesIO()
+
+        with rc_context():
+            fig = rect_figure(hatch='///')
+            fig.savefig(buf, format='typ')
+
+        text = buf.getvalue().decode()
+        assert 'rect(' in text
+        assert 'clip: true' in text
+        assert 'curve.move' in text
+        assert 'curve.line' in text
+        assert 'thickness: 1.0pt' in text
+
+    @pytest.mark.parametrize('hatch', ['///', 'x/', '.'])
+    def test_draw_path_hatched_rect_pixels(self, hatch: str):
+        with rc_context():
+            actual_fig = rect_figure(hatch=hatch)
+            actual = to_array(actual_fig, dpi=100)
+            plain_fig = rect_figure()
+            plain = to_array(plain_fig, dpi=100)
+
+        rgb = actual[..., :3].astype(np.int16)
+        black = (rgb < 120).all(axis=-1)
+
+        plain_rgb = plain[..., :3].astype(np.int16)
+        plain_black = (plain_rgb < 120).all(axis=-1)
+
+        # Interior of hatched image must be darker (more black).
+        interior = np.s_[35:165, 35:165]
+        assert black[interior].sum() > plain_black[interior].sum() + 200
+
+    def test_draw_path_hatched_rect_pixels_golden(self):
+        with rc_context():
+            actual_fig = rect_figure(hatch='///')
+            actual = to_array(actual_fig, dpi=100)
+
+        expected = Image.open(data_dir / 'hatched_rect.png')
         assert_array_equal(actual, expected)
 
     @pytest.mark.parametrize('dpi', [72, 100, 144])

@@ -121,6 +121,106 @@ class TypstRenderer(RendererBase):
     def _append(self, gc: GraphicsContextBase, expr: Call):
         self.main.append(self._wrap_clip(gc, expr))
 
+    def _color(self, colour: ColorType) -> Call:
+        return Call('rgb', *[Scalar(c * 100, '%') for c in colour])
+
+    def _hatch_stroke(self, paint: Call, gc: GraphicsContextBase) -> Call:
+        thickness = Scalar(gc.get_hatch_linewidth(), 'pt')
+        return Call('stroke', paint=paint, thickness=thickness,
+                    cap=Scalar('butt'), join=Scalar('miter'))
+
+    def _hatch_point(self, tile_x: float, tile_y: float,
+                     point: tuple[float, float]) -> Array:
+        x, y = point
+        return Array([Scalar(tile_x + x, 'in'), Scalar(tile_y + 1 - y, 'in')])
+
+    def _hatch_curves(self, path: Path, tile_x: float, tile_y: float,
+                      paint: Call, stroke: Call) -> list[Call]:
+        subpath: list[Call] | None = None
+        superpath: list[list[Call]] = []
+
+        for points, code in path.iter_segments():
+            coords = list(zip(points[0::2], points[1::2]))
+            scalars = [self._hatch_point(tile_x, tile_y, point)
+                       for point in coords]
+            match code:
+                case Path.STOP:
+                    continue
+                case Path.MOVETO:
+                    subpath = []
+                    superpath.append(subpath)
+                    op = Call('curve.move', scalars[0])
+                case Path.LINETO:
+                    op = Call('curve.line', scalars[0])
+                case Path.CURVE3:
+                    op = Call('curve.quad', scalars[0], scalars[1])
+                case Path.CURVE4:
+                    op = Call('curve.cubic', scalars[0], scalars[1],
+                              scalars[2])
+                case Path.CLOSEPOLY:
+                    op = Call('curve.close', mode='"straight"')
+
+            if subpath is not None:
+                subpath.append(op)
+
+        curves = []
+        zero = Scalar(0, 'in')
+        for subpath in superpath:
+            curve = Call('curve', *subpath, fill=paint, stroke=stroke)
+            curve_abs = Call('place', curve, dx=zero, dy=zero)
+            curves.append(curve_abs)
+        return curves
+
+    def _hatch_rect(self, x: float, y: float, width: float, height: float,
+                    gc: GraphicsContextBase):
+        path = gc.get_hatch_path()
+        if path is None or len(path.vertices) == 0:
+            return
+
+        paint = self._color(gc.get_hatch_color())
+        stroke = self._hatch_stroke(paint, gc)
+        body = Block()
+
+        tile_y = -1.0
+        while tile_y <= height + 1.0:
+            tile_x = -1.0
+            while tile_x <= width + 1.0:
+                for curve in self._hatch_curves(path, tile_x, tile_y, paint,
+                                                stroke):
+                    body.append(curve)
+                tile_x += 1.0
+            tile_y += 1.0
+
+        box = Call('box', body, clip=True,
+                   width=Scalar(width, 'in'), height=Scalar(height, 'in'))
+        place = Call('place', box, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+        self._append(gc, place)
+
+    def _path_rect(self, path: Path, transform: Transform) \
+            -> tuple[float, float, float, float] | None:
+        points = []
+        for point, code in path.iter_segments(transform):
+            if code in (Path.MOVETO, Path.LINETO):
+                x, y = point
+                points.append((x / self.dpi, self.height - y / self.dpi))
+            elif code == Path.CLOSEPOLY:
+                continue
+            else:
+                return None
+
+        if len(points) != 4:
+            return None
+
+        xs = {point[0] for point in points}
+        ys = {point[1] for point in points}
+        corners = {(x, y) for x in xs for y in ys}
+        if len(xs) != 2 or len(ys) != 2 or set(points) != corners:
+            return None
+
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        return x0, y0, x1 - x0, y1 - y0
+
     def __enter__(self) -> Self:
         # First of all, add some helpers for rendering at the beginning.
         with open(PROLOGUE) as fin:
@@ -232,12 +332,12 @@ class TypstRenderer(RendererBase):
         # Configure how to fill the path.
         fill = None
         if rgbFace is not None:
-            fill = Call('rgb', *[Scalar(c * 100, '%') for c in rgbFace])
+            fill = self._color(rgbFace)
 
         # Configure basic appearance of a line.
         if (capstyle := gc.get_capstyle()) == 'projecting':
             capstyle = 'square'
-        colour = Call('rgb', *[Scalar(c * 100, '%') for c in gc.get_rgb()])
+        colour = self._color(gc.get_rgb())
         stroke = Call(
             'stroke',
             paint=colour,
@@ -259,6 +359,23 @@ class TypstRenderer(RendererBase):
                 })
             else:
                 stroke.kwargs.update({'dash': bounds})
+
+        if gc.get_hatch() and (rect := self._path_rect(path, transform)):
+            x, y, width, height = rect
+            if fill is not None:
+                face = Call('rect', fill=fill, stroke=None,
+                            width=Scalar(width, 'in'),
+                            height=Scalar(height, 'in'))
+                place = Call('place', face,
+                             dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+                self._append(gc, place)
+
+            self._hatch_rect(x, y, width, height, gc)
+            edge = Call('rect', fill=None, stroke=stroke,
+                        width=Scalar(width, 'in'), height=Scalar(height, 'in'))
+            place = Call('place', edge, dx=Scalar(x, 'in'), dy=Scalar(y, 'in'))
+            self._append(gc, place)
+            return
 
         # Since Typst v0.13.0, path drawing API (aka curve) is more coherent to
         # Matplotlib's Path object.
