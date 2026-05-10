@@ -200,6 +200,30 @@ class TestTypstRenderer:
         expected = Image.open(data_dir / 'hatched_rect.png')
         assert_array_equal(actual, expected)
 
+    @pytest.mark.parametrize('color', ['black', 'red', 'green'])
+    def test_draw_text_colored(self, color: str):
+        color_codes = {'black': 0x000000, 'red': 0xff0000, 'green': 0x00ff00}
+        color_code = color_codes[color]
+
+        with rc_context():
+            fig, ax = plt.subplots(figsize=(2, 2), dpi=144)
+            ax.axis(False)
+            ax.text(0, 0, 'Hello, world!', color=f'#{color_code:06x}', size=99)
+            pixels = to_array(fig).astype(np.uint32)
+
+        rgba = (pixels[..., 0] << 24) \
+             | (pixels[..., 1] << 16) \
+             | (pixels[..., 2] << 8) \
+             | (pixels[..., 3] << 0)
+        rgb = (rgba >> 8) & 0xffffff
+
+        non_white = rgb[rgb != 0xffffff]
+        counts, values = np.histogram(non_white)
+        ix = np.argmax(counts)
+        dominant_color = values[ix].astype(np.uint32)  # OK: float64 -> uint32
+
+        assert dominant_color == color_code, 'No any pixel of text color.'
+
     @pytest.mark.parametrize('dpi', [72, 100, 144])
     def test_draw_image_lenna(self, dpi: int):
         img = Image.open(data_dir / 'lenna.png')
