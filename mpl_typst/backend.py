@@ -517,6 +517,11 @@ class TypstRenderer(RendererBase):
         alignment = 'center + horizon'
         baseline = False
         fontsize = prop.get_size_in_points()
+
+        rgb = gc.get_rgb()
+        hex_color = mpl.colors.to_hex(rgb, keep_alpha=len(rgb) == 4)
+        text_color = Call('rgb', Scalar(hex_color))
+
         if mtext:
             pos = mtext.get_unitless_position()
             x, y = mtext.get_transform().transform(pos)
@@ -536,8 +541,6 @@ class TypstRenderer(RendererBase):
             alignment = f'{halign} + {valign}'
             fontsize = mtext.get_fontsize()
             angle = mtext.get_rotation()
-            rgbText = tuple(gc.get_rgb())[:3]
-            text_color = Call('rgb', *[Scalar(c * 100, '%') for c in rgbText])
         else:
             x = x / self.figure.dpi
             y = self.height + y / self.figure.dpi
