@@ -517,6 +517,11 @@ class TypstRenderer(RendererBase):
         alignment = 'center + horizon'
         baseline = False
         fontsize = prop.get_size_in_points()
+
+        rgb = gc.get_rgb()
+        hex_color = mpl.colors.to_hex(rgb, keep_alpha=len(rgb) == 4)
+        text_color = Call('rgb', Scalar(hex_color))
+
         if mtext:
             pos = mtext.get_unitless_position()
             x, y = mtext.get_transform().transform(pos)
@@ -547,7 +552,8 @@ class TypstRenderer(RendererBase):
                     size=Scalar(fontsize, 'pt'),
                     alignment=alignment,
                     baseline=baseline,
-                    angle=Scalar(360 - angle, 'deg'))
+                    angle=Scalar(360 - angle, 'deg'),
+                    fill=text_color)
         self.main.append(elem)
 
     def flipy(self):
