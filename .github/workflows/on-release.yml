@@ -5,82 +5,92 @@
 name: Build and publish
 
 on:
-  workflow_dispatch: {}  # allows triggering this workflow manually
+  workflow_dispatch: {}
   push:
-    branches: # trigger on commits to main branch
+    branches:
       - main
-  pull_request:  # trigger on pull requests affecting relevant files
+  pull_request:
     branches:
       - main
     paths:
-      - '**workflows/on-release.yml'
+      - '.github/workflows/on-release.yml'
       - 'pyproject.toml'
-  release:  # trigger on published release
+  release:
     types:
       - published
 
+permissions:
+  contents: read
+
 jobs:
-  build-sdist:
-    name: Build source distribution
-    runs-on: ubuntu-latest
+  build-dist:
+    name: Build distributions
+    runs-on: 'ubuntu-24.04'
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
           submodules: true
 
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # ratchet:actions/setup-python@v5
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
-          python-version: '3.10'
+          cache: 'pip'
+          python-version: 3.12
 
       - name: Install build tools
-        run: python -m pip install build
+        run: python -m pip install build twine
 
-      - name: Build sdist
-        run: python -m build -s
+      - name: Build distributions
+        run: python -m build -s -w
 
-      - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # ratchet: actions/upload-artifact@v4
+      - name: Check distributions
+        run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
         with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: dist
+          path: dist/
 
-  build-wheels:
-    name: Build wheel distribution
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # ratchet:actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # ratchet:actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install build tools
-        run: python -m pip install build
-
-      - name: Build wheel
-        run: python -m build -w
-
-      - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # ratchet: actions/upload-artifact@v4
-        with:
-          name: wheel
-          path: dist/*.whl
-
-  upload-pypi:
-    name: Release and upload to PyPI
+  upload-github-release-assets:
+    name: Upload GitHub Release assets
     needs:
-      - build-sdist
-      - build-wheels
-    runs-on: ubuntu-latest
-    # Only publish release to PyPI when a github release is created.
+      - build-dist
+    runs-on: 'ubuntu-24.04'
     if: github.event_name == 'release' && github.event.action == 'published'
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # ratchet:actions/download-artifact@v4
         with:
-          # Unpacks sdist and wheel builds to dist/ directory.
+          name: dist
           path: dist
-          merge-multiple: true
 
-      - uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # ratchet:pypa/gh-action-pypi-publish@v1.12.4
+      - name: Upload distributions to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+  upload-pypi:
+    name: Publish distributions to PyPI
+    needs:
+      - build-dist
+      - upload-github-release-assets
+    runs-on: 'ubuntu-24.04'
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mpl-typst
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # ratchet:actions/download-artifact@v4
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          name: dist
+          path: dist
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # ratchet:pypa/gh-action-pypi-publish@v1.12.4
