@@ -5,15 +5,8 @@ from dataclasses import dataclass, fields
 from functools import total_ordering
 from os import PathLike, getenv
 from pathlib import Path
-from sys import version_info
-from typing import IO, Any
-
-if version_info >= (3, 11):
-    from tomllib import load as load_toml
-    from typing import Self
-else:
-    from tomli import load as load_toml
-    from typing_extensions import Self
+from tomllib import load as load_toml
+from typing import IO, Any, Self
 
 PREFIX = 'MPL_TYPST_'
 
@@ -52,7 +45,7 @@ class TypstVersion:
     @classmethod
     def from_match(cls, match: re.Match[str]) -> Self:
         prerelease = match.group('prerelease') or ''
-        prerelease_parts: list[int | str, ...] = []
+        prerelease_parts: list[int | str] = []
         for part in prerelease.split('.'):
             if not part:
                 continue
@@ -112,7 +105,10 @@ class TypstVersion:
                 return -1
             if isinstance(left, str) and isinstance(right, int):
                 return 1
-            return 1 - 2 * int(left < right)  # {-1, 1}
+            if isinstance(left, int) and isinstance(right, int):
+                return 1 - 2 * int(left < right)  # {-1, 1}
+            if isinstance(left, str) and isinstance(right, str):
+                return 1 - 2 * int(left < right)  # {-1, 1}
 
         return (len(lhs) > len(rhs)) - (len(lhs) < len(rhs))
 
