@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-[unreleased]: https://github.com/daskol/mpl-typst/compare/v0.3.0...HEAD
+[unreleased]: https://github.com/daskol/mpl-typst/compare/v0.3.1...HEAD
 
 ### Added
 ### Changed
@@ -10,6 +10,10 @@
 ### Removed
 ### Fixed
 ### Security
+
+## [0.3.1] - 2026-06-27
+
+[0.3.1]: https://github.com/daskol/mpl-typst/compare/v0.3.0...v0.3.1
 
 ### Fixed
 
