@@ -43,7 +43,7 @@ dependencies = [
 requires-python = ">=3.11,<4"
 
 [project.optional-dependencies]
-dev = ["isort", "pytest>=8", "ruff"]
+dev = ["isort", "packaging", "pytest>=8", "ruff"]
 test = ["pillow", "numpy"]
 
 [project.urls]

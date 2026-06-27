@@ -11,6 +11,10 @@
 ### Fixed
 ### Security
 
+### Fixed
+
+- Add reference test image for rendering changes in Matplotlib 3.11.
+
 ## [0.3.0] - 2026-05-11
 
 [0.3.0]: https://github.com/daskol/mpl-typst/compare/v0.2.1...v0.3.0
