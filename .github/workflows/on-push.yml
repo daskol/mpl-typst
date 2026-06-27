@@ -60,7 +60,7 @@ jobs:
       - name: Install Typst binary
         env:
           TYPST_RELEASE: 'https://github.com/typst/typst/releases/download'
-          TYPST_VERSION: '0.14.2'
+          TYPST_VERSION: '0.15.0'
         run: |
           mkdir -p "$HOME/.cache/typst"
           cd "$HOME/.cache/typst"
