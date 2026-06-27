@@ -37,7 +37,8 @@ if mpl.__version_info__ >= (3, 8):
 else:
     ColorType = Any
 
-from mpl_typst.config import Config, compiler
+import mpl_typst.config as C
+from mpl_typst.config import Config, TypstVersion, compiler
 from mpl_typst.typst import (
     Array, Block, Call, Content, Dictionary, Scalar, Writer as TypstWriter)
 
@@ -331,15 +332,20 @@ class TypstRenderer(RendererBase):
             image_ext = f'.image{next(self._image_counter)}.png'
             image_path = self.path.with_suffix(image_ext)
             img.save(image_path)
-            image = Call('image', f'"{image_path.name}"',
+            image = Call('image.decode', f'"{image_path.name}"',
                          width=Scalar(w, 'in'), height=Scalar(h, 'in'))
         else:
             buf = BytesIO()
             img.save(buf, format='png')
             data = '"' + base64.b64encode(buf.getvalue()).decode('utf-8') + '"'
-            image = Call('image', Call('base64.decode', data),
-                         format='"png"', width=Scalar(w, 'in'),
-                         height=Scalar(h, 'in'))
+            data_decoded = Call('base64.decode', data)
+            # Since typst 0.13.0: `image.decode` deprecated.
+            if C.compiler_version < TypstVersion(0, 13, 0):
+                image = Call('image.decode', data_decoded, format='"png"',
+                             width=Scalar(w, 'in'), height=Scalar(h, 'in'))
+            else:
+                image = Call('image', data_decoded, format='"png"',
+                             width=Scalar(w, 'in'), height=Scalar(h, 'in'))
 
         place = Call('place', 'top + left', image,
                      dx=Scalar(x / self.dpi, 'in'),
