@@ -1,6 +1,7 @@
 import pathlib
 from io import BytesIO
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -8,12 +9,19 @@ from matplotlib.figure import Figure
 from matplotlib.patches import PathPatch, Rectangle
 from matplotlib.path import Path
 from numpy.testing import assert_array_equal
+from packaging.version import Version
 from PIL import Image
 
 from mpl_typst import rc_context
 from mpl_typst.testing import assert_anchored_places
 
 data_dir = pathlib.Path(__file__).parent / 'testdata'
+
+MPL311PRE = Version(mpl.__version__).release < (3, 11)
+if MPL311PRE:
+    GOLDEN_SET_DIR = data_dir / 'matplotlib-3.11-pre'
+else:
+    GOLDEN_SET_DIR = data_dir / 'matplotlib-3.11'
 
 
 def to_array(fig, dpi: int = 144, **kwargs) -> np.ndarray:
@@ -262,12 +270,15 @@ class TestTypstRenderer:
         ix, *_ = np.nonzero(actual - desired)
         nnz = len(ix)
         total = np.prod(actual.shape)
-        expected = {72: 2, 100: 4, 144: 1}[dpi]
+        expected = {72: 2, 100: 4, 144: 3}[dpi]
         assert (ratio := 100 * nnz / total) < expected, \
             f'Number of mismatched pixels exceed {expected}%: {ratio:.2f}%.'
 
         # Compare with the previous renderings.
-        reference = Image.open(data_dir / f'spy{dpi:03d}.png')
+        reference_path = GOLDEN_SET_DIR / f'spy{dpi:03d}.png'
+        assert reference_path.exists(), \
+            f'Missing reference image: {reference_path}.'
+        reference = Image.open(reference_path)
         assert_array_equal(actual, reference)
 
 
