@@ -337,7 +337,7 @@ class TypstRenderer(RendererBase):
             buf = BytesIO()
             img.save(buf, format='png')
             data = '"' + base64.b64encode(buf.getvalue()).decode('utf-8') + '"'
-            image = Call('image.decode', Call('base64.decode', data),
+            image = Call('image', Call('base64.decode', data),
                          format='"png"', width=Scalar(w, 'in'),
                          height=Scalar(h, 'in'))
 
