@@ -58,3 +58,7 @@ class TestTypstVersion:
         rc2 = TypstVersion(0, 15, 0, ('rc', 2))
         release = TypstVersion(0, 15, 0)
         assert rc1 < rc2 < release
+
+    def test_getattr(self):
+        import mpl_typst.config as C
+        assert C.compiler_version is not None

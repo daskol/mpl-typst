@@ -191,4 +191,15 @@ def parse_typst_compiler_version(output: str) -> TypstVersion | None:
 
 
 compiler = get_typst_compiler('compiler')  # MPL_TYPST_COMPILER
-compiler_version = get_typst_compiler_version(compiler)
+compiler_version: TypstVersion | None
+
+
+def __getattr__(name: str) -> Any:
+    """Evaluate some configuration fields lazily."""
+    match name:
+        case 'compiler_version':
+            global compiler_version
+            compiler_version = get_typst_compiler_version(compiler)
+            return compiler_version
+        case _:
+            raise AttributeError(f"'{__name__}' has no attribute '{name}'")
