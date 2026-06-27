@@ -14,6 +14,7 @@
 ### Fixed
 
 - Add reference test image for rendering changes in Matplotlib 3.11.
+- Handle deprecated `image.decode` symbol since Typst v0.13.0.
 
 ## [0.3.0] - 2026-05-11
 
